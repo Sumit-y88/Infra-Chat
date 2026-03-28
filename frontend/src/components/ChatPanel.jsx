@@ -3,7 +3,7 @@ import api from "../services/api";
 import { formatMessageTime } from "../utils/time";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const API_BASE = "http://localhost:5000";
+const API_BASE = "https://infra-chat.onrender.com";
 
 function formatFileSize(bytes) {
   if (!bytes) return "";

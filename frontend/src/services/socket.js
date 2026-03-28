@@ -5,7 +5,7 @@ let socket = null;
 export const connectSocket = (token) => {
   if (!token) return null;
 
-  socket = io("http://localhost:5000", {
+  socket = io("https://infra-chat.onrender.com", {
     auth: { token },
   });
 

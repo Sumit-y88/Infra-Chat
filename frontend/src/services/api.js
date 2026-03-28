@@ -2,7 +2,7 @@ import axios from "axios";
 
 const baseURL = import.meta.env.MODE === "production"
   ? "/api"
-  : "http://localhost:5000/api";
+  : "https://infra-chat.onrender.com/api";
 
 const api = axios.create({
   baseURL,
