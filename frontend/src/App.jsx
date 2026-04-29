@@ -9,6 +9,7 @@ import RoomChat from "./pages/RoomChat";
 import DirectMessages from "./pages/DirectMessages";
 import Users from "./pages/Users";
 import Workspace from "./pages/Workspace";
+import Home from "./pages/Home";
 import "./App.css";
 import AdminPanel from "./pages/AdminPanel";
 import AuditLogs from "./pages/AuditLogs";
@@ -23,8 +24,10 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
+        <Route path="/" element={<Home />} />
+        
         <Route
-          path="/"
+          path="/workspace"
           element={
             <ProtectedRoute>
               <Workspace/>

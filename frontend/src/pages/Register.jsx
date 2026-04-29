@@ -23,7 +23,7 @@ function Register() {
 
     try {
       await register(form.username, form.email, form.password);
-      navigate("/");
+      navigate("/workspace");
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
     }

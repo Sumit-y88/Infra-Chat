@@ -22,7 +22,7 @@ function Login() {
 
     try {
       await login(form.email, form.password);
-      navigate("/");
+      navigate("/workspace");
     } catch (err) {
       setError(err.response?.data?.message || "Login failed");
     }
