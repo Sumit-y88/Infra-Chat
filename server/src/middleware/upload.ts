@@ -1,6 +1,7 @@
-const multer = require('multer');
-const path = require('path');
-const crypto = require('crypto');
+import multer from 'multer';
+import path from 'path';
+import crypto from 'crypto';
+import fs from 'fs';
 
 const ALLOWED_TYPES = [
   'image/jpeg',
@@ -21,26 +22,27 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '..', 'uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${uniqueSuffix}${ext}`);
-  },
-});
+// Always resolve to the server root uploads directory
+const uploadDir = path.resolve(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-const fileFilter = (req, file, cb) => {
+const storage = multer.memoryStorage();
+
+const fileFilter = (
+  _req: Express.Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
   if (ALLOWED_TYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error(`File type ${file.mimetype} is not allowed.`), false);
+    cb(new Error(`File type ${file.mimetype} is not allowed.`));
   }
 };
 
-const upload = multer({
+export const upload = multer({
   storage,
   fileFilter,
   limits: {
@@ -48,4 +50,4 @@ const upload = multer({
   },
 });
 
-module.exports = upload;
+export default upload;

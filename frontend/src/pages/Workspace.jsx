@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { useAuth } from "../context/AuthContext";
@@ -8,6 +9,8 @@ import InfoPanel from "../components/InfoPanel";
 
 function Workspace() {
   const { user } = useAuth();
+  const { id: routeRoomId, userId: routeUserId } = useParams();
+  const navigate = useNavigate();
 
   const [rooms, setRooms] = useState([]);
   const [users, setUsers] = useState([]);
@@ -31,6 +34,7 @@ function Workspace() {
   const [uploading, setUploading] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showInfo, setShowInfo] = useState(true);
 
   // Listen for mobile menu toggle from Navbar
   useEffect(() => {
@@ -212,8 +216,58 @@ const refreshRooms = async () => {
       });
     };
 
+    const handleMessageDeleted = (data) => {
+      const targetId = data.messageId || data.deletedMessage?._id;
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg._id === targetId
+            ? (data.deletedMessage || {
+                ...msg,
+                content: "This message was deleted",
+                deletedForEveryone: true,
+                attachments: [],
+              })
+            : msg
+        )
+      );
+    };
+
+    const handleMessageUpdated = (data) => {
+      const targetId = data.messageId || data.updatedMessage?._id;
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === targetId ? data.updatedMessage : msg))
+      );
+    };
+
+    const handleDmDeleted = (data) => {
+      const targetId = data.messageId || data.deletedMessage?._id;
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg._id === targetId
+            ? (data.deletedMessage || {
+                ...msg,
+                content: "This message was deleted",
+                deletedForEveryone: true,
+                attachments: [],
+              })
+            : msg
+        )
+      );
+    };
+
+    const handleDmUpdated = (data) => {
+      const targetId = data.messageId || data.updatedMessage?._id;
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === targetId ? data.updatedMessage : msg))
+      );
+    };
+
     socket.on("message:new", handleNewMessage);
+    socket.on("message:deleted", handleMessageDeleted);
+    socket.on("message:updated", handleMessageUpdated);
     socket.on("dm:new", handleNewDm);
+    socket.on("dm:deleted", handleDmDeleted);
+    socket.on("dm:updated", handleDmUpdated);
     socket.on("room:onlineUsers", handleOnlineUsers);
     socket.on("typing:update", handleTyping);
 
@@ -271,7 +325,11 @@ const refreshRooms = async () => {
 
     return () => {
       socket.off("message:new", handleNewMessage);
+      socket.off("message:deleted", handleMessageDeleted);
+      socket.off("message:updated", handleMessageUpdated);
       socket.off("dm:new", handleNewDm);
+      socket.off("dm:deleted", handleDmDeleted);
+      socket.off("dm:updated", handleDmUpdated);
       socket.off("room:onlineUsers", handleOnlineUsers);
       socket.off("typing:update", handleTyping);
       socket.off("room:kicked", handleKicked);
@@ -282,8 +340,11 @@ const refreshRooms = async () => {
     };
   }, [selectedChat, user?.id]);
 
-  const openRoom = async (room) => {
+  const openRoom = async (room, updateRoute = true) => {
     setSelectedChat({ type: "room", data: room });
+    if (updateRoute && routeRoomId !== room._id) {
+      navigate(`/rooms/${room._id}`, { replace: true });
+    }
     setTypingUsers([]);
     setRoomUnread((prev) => ({ ...prev, [room._id]: 0 }));
     setAnnouncement(
@@ -304,13 +365,75 @@ const refreshRooms = async () => {
     }
   };
 
-  const openDm = async (selectedUser) => {
+  const openDm = async (selectedUser, updateRoute = true) => {
     setSelectedChat({ type: "dm", data: selectedUser });
+    if (updateRoute && routeUserId !== selectedUser._id) {
+      navigate(`/dm/${selectedUser._id}`, { replace: true });
+    }
     setTypingUsers([]);
     setOnlineUsers([]);
     setDmUnread((prev) => ({ ...prev, [selectedUser._id]: 0 }));
     await fetchDirectMessages(selectedUser._id);
   };
+
+  // Synchronize route with selected chat or default
+  useEffect(() => {
+    if (routeRoomId) {
+      if (selectedChat?.type === "room" && selectedChat?.data?._id === routeRoomId) {
+        return;
+      }
+      if (rooms.length > 0) {
+        const targetRoom = rooms.find((r) => r._id === routeRoomId);
+        if (targetRoom) {
+          openRoom(targetRoom, false);
+          return;
+        }
+      }
+      // If rooms list is empty or targetRoom wasn't found in current list, fetch directly
+      api
+        .get(`/rooms/${routeRoomId}`)
+        .then((res) => {
+          if (res.data?.room && selectedChat?.data?._id !== routeRoomId) {
+            openRoom(res.data.room, false);
+          }
+        })
+        .catch((err) => {
+          console.error("Specified room not accessible or found", err);
+        });
+    } else if (routeUserId) {
+      if (selectedChat?.type === "dm" && selectedChat?.data?._id === routeUserId) {
+        return;
+      }
+      if (users.length > 0) {
+        const targetUser = users.find((u) => u._id === routeUserId);
+        if (targetUser) {
+          openDm(targetUser, false);
+          return;
+        }
+      }
+      api
+        .get("/users")
+        .then((res) => {
+          const found = (res.data.users || []).find((u) => u._id === routeUserId);
+          if (found && selectedChat?.data?._id !== routeUserId) {
+            openDm(found, false);
+          }
+        })
+        .catch((err) => {
+          console.error("User not found for direct message", err);
+        });
+    } else if (!selectedChat && rooms.length > 0) {
+      const defaultRoom =
+        rooms.find((r) => r.name === "general") ||
+        rooms.find((r) => isRoomMember(r)) ||
+        rooms[0];
+
+      if (defaultRoom) {
+        openRoom(defaultRoom, false);
+      }
+    }
+  }, [routeRoomId, routeUserId, rooms, users]);
+
 
   const handleCreateRoom = async (e) => {
     e.preventDefault();
@@ -447,7 +570,8 @@ const refreshRooms = async () => {
   };
 
   return (
-    <div className="workspace">
+    <div className={`workspace ${showInfo ? "workspace--with-panel" : "workspace--no-panel"}`}>
+
       {/* Mobile sidebar overlay */}
       <div
         className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
@@ -480,6 +604,7 @@ const refreshRooms = async () => {
         messages={messages}
         setMessages={setMessages}
         text={text}
+        setText={setText}
         sendMessage={sendMessage}
         handleTypingChange={handleTypingChange}
         typingUsers={typingUsers}
@@ -487,25 +612,34 @@ const refreshRooms = async () => {
         setPendingFiles={setPendingFiles}
         uploading={uploading}
         announcement={announcement}
+        memberCount={members.length}
+        onlineCount={onlineUsers.length}
+        onToggleInfo={() => setShowInfo((prev) => !prev)}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        availableRooms={rooms}
+        onSelectRoom={openRoom}
       />
 
-     <InfoPanel
-  user={user}
-  selectedChat={selectedChat}
-  members={members}
-  onlineUsers={onlineUsers}
-  handleModerationAction={(action, username) => {
-    const socket = getSocket();
-    if (!socket || !selectedChat || selectedChat.type !== "room") return;
 
-    socket.emit("message:send", {
-      roomId: selectedChat.data._id,
-      content: `/${action} ${username}`,
-    });
-  }}
-  refreshSelectedRoomMembers={refreshSelectedRoomMembers}
-  refreshRooms={refreshRooms}
-/>
+      <InfoPanel
+        user={user}
+        selectedChat={selectedChat}
+        members={members}
+        onlineUsers={onlineUsers}
+        handleModerationAction={(action, username) => {
+          const socket = getSocket();
+          if (!socket || !selectedChat || selectedChat.type !== "room") return;
+
+          socket.emit("message:send", {
+            roomId: selectedChat.data._id,
+            content: `/${action} ${username}`,
+          });
+        }}
+        refreshSelectedRoomMembers={refreshSelectedRoomMembers}
+        refreshRooms={refreshRooms}
+        isOpen={showInfo}
+        onClose={() => setShowInfo(false)}
+      />
 
 
 

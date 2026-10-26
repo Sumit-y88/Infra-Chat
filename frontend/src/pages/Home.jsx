@@ -1,249 +1,382 @@
-import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import RoleGlyph from "../components/RoleGlyph";
 
 function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const observerRef = useRef(null);
-
-  useEffect(() => {
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("visible");
-            observerRef.current.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.1 }
-    );
-
-    document.querySelectorAll(".reveal").forEach((el) => {
-      observerRef.current.observe(el);
-    });
-
-    return () => observerRef.current?.disconnect();
-  }, []);
 
   return (
     <div className="home-page">
-      {/* ── Animated Background ── */}
-      <div className="home-bg">
-        <div className="home-grid-pattern"></div>
-        <div className="home-blob home-blob--1"></div>
-        <div className="home-blob home-blob--2"></div>
-        <div className="home-blob home-blob--3"></div>
-      </div>
-
-      {/* ── Hero ── */}
+      {/* ── Hero Section ── */}
       <section className="home-hero">
         <div className="home-hero__inner">
-          <div className="home-pill anim-fade-up" style={{ animationDelay: "0.1s" }}>
-            <span className="home-pill__dot"></span>
-            <span>InfraChat 2.0 &mdash; Now Live</span>
+          <div className="home-kicker">
+            <span className="home-kicker__dot" />
+            <span>Internal Network — System Active</span>
           </div>
 
-          <h1 className="home-hero__title anim-fade-up" style={{ animationDelay: "0.2s" }}>
-            Communication
+          <h1 className="home-hero__title">
+            Enterprise communication,
             <br />
-            <span className="home-gradient-text">Reimagined.</span>
+            stripped of noise.
           </h1>
 
-          <p className="home-hero__sub anim-fade-up" style={{ animationDelay: "0.35s" }}>
-            Enterprise-grade messaging with secure rooms, role-based access, real-time
-            collaboration, and transparent audit trails — all in one workspace.
+          <p className="home-hero__sub">
+            A quiet workspace with strict three-tier role governance, partitioned room channels,
+            direct messaging, keyboard-driven slash commands, and permanent audit logging.
           </p>
 
-          <div className="home-hero__cta anim-fade-up" style={{ animationDelay: "0.5s" }}>
+          <div className="home-hero__cta">
             {user ? (
-              <button className="home-btn home-btn--primary" onClick={() => navigate("/workspace")}>
-                Open Workspace
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                  <polyline points="12 5 19 12 12 19" />
-                </svg>
-              </button>
-            ) : (
               <>
-                <button className="home-btn home-btn--primary" onClick={() => navigate("/register")}>
-                  Get Started Free
-                </button>
-                <button className="home-btn home-btn--ghost" onClick={() => navigate("/login")}>
-                  Sign In
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <button
+                  className="btn-accent home-cta-btn"
+                  onClick={() => navigate("/workspace")}
+                >
+                  <span>Open workspace</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="5" y1="12" x2="19" y2="12" />
                     <polyline points="12 5 19 12 12 19" />
                   </svg>
                 </button>
+                {user.role >= 2 && (
+                  <button
+                    className="btn-quiet home-cta-btn"
+                    onClick={() => navigate("/audit")}
+                  >
+                    Audit logs
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  className="btn-accent home-cta-btn"
+                  onClick={() => navigate("/register")}
+                >
+                  Create account
+                </button>
+                <button
+                  className="btn-quiet home-cta-btn"
+                  onClick={() => navigate("/login")}
+                >
+                  Sign in
+                </button>
               </>
             )}
           </div>
         </div>
-
-        {/* Glowing orb behind the CTA */}
-        <div className="home-hero__glow"></div>
       </section>
 
-      {/* ── Stats Strip ── */}
-      <section className="home-stats reveal">
-        <div className="home-stats__inner">
-          {[
-            { value: "99.9%", label: "Uptime" },
-            { value: "AES-256", label: "Encryption" },
-            { value: "< 50ms", label: "Latency" },
-            { value: "RBAC", label: "Access Control" },
-          ].map((stat) => (
-            <div className="home-stat" key={stat.label}>
-              <span className="home-stat__value">{stat.value}</span>
-              <span className="home-stat__label">{stat.label}</span>
+      {/* ── App Specimen / Interactive Preview ── */}
+      <section className="home-specimen-wrap">
+        <div className="home-specimen">
+          {/* Specimen Header Bar */}
+          <div className="home-specimen__chrome">
+            <div className="home-specimen__traffic-lights">
+              <span className="home-specimen__dot" />
+              <span className="home-specimen__dot" />
+              <span className="home-specimen__dot" />
             </div>
-          ))}
+            <div className="home-specimen__address-bar">
+              internal.network/workspace
+            </div>
+            <div className="home-specimen__status-indicator">
+              <span className="presence-dot online" />
+              <span>connected</span>
+            </div>
+          </div>
+
+          {/* 3-column Layout Preview */}
+          <div className="home-specimen__workspace">
+            {/* Specimen Left Rail */}
+            <div className="home-specimen__rail">
+              <div className="home-specimen__rail-brand">
+                <div className="brand-mark" aria-hidden="true">
+                  <span className="brand-mark__bar" style={{ height: "6px" }} />
+                  <span className="brand-mark__bar" style={{ height: "10px" }} />
+                  <span className="brand-mark__bar" style={{ height: "14px" }} />
+                </div>
+                <span className="home-specimen__brand-text">Internal Network</span>
+              </div>
+
+              <div className="home-specimen__group">
+                <span className="home-specimen__group-title">Rooms</span>
+                <div className="home-specimen__row active">
+                  <span className="home-specimen__hash">#</span>
+                  <span>general</span>
+                </div>
+                <div className="home-specimen__row">
+                  <span className="home-specimen__hash">#</span>
+                  <span>infrastructure</span>
+                </div>
+                <div className="home-specimen__row">
+                  <span className="home-specimen__hash">#</span>
+                  <span>deployments</span>
+                </div>
+              </div>
+
+              <div className="home-specimen__group">
+                <span className="home-specimen__group-title">Direct messages</span>
+                <div className="home-specimen__row">
+                  <span className="presence-dot online" />
+                  <span>Marcus Vance</span>
+                </div>
+                <div className="home-specimen__row">
+                  <span className="presence-dot offline" />
+                  <span>Elena Rostova</span>
+                </div>
+              </div>
+
+              <div className="home-specimen__rail-footer">
+                <div className="avatar-square avatar-square--sm">SY</div>
+                <div className="home-specimen__user-meta">
+                  <span className="home-specimen__username">Sumit</span>
+                  <span className="home-specimen__user-role">SuperAdmin</span>
+                </div>
+                <RoleGlyph level={3} />
+              </div>
+            </div>
+
+            {/* Specimen Center Chat */}
+            <div className="home-specimen__center">
+              <div className="home-specimen__chat-header">
+                <div className="home-specimen__header-info">
+                  <span className="home-specimen__header-title">#general</span>
+                  <span className="home-specimen__header-sub">14 members, 4 online</span>
+                </div>
+                <span className="home-specimen__badge-quiet">Quiet feed</span>
+              </div>
+
+              <div className="home-specimen__chat-feed">
+                {/* Message 1 */}
+                <div className="home-specimen__msg">
+                  <div className="avatar-square">MV</div>
+                  <div className="home-specimen__msg-body">
+                    <div className="home-specimen__msg-meta">
+                      <span className="home-specimen__msg-author">Marcus Vance</span>
+                      <RoleGlyph level={2} />
+                      <span className="home-specimen__msg-time">09:41</span>
+                    </div>
+                    <div className="home-specimen__msg-text">
+                      Database replication window completed at 04:00 UTC. Ingress latency steady at 12ms.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ledger row */}
+                <div className="home-specimen__ledger">
+                  <span className="home-specimen__ledger-icon">↳</span>
+                  <span>Audit entry: Marcus Vance updated rate limit configuration</span>
+                  <span className="home-specimen__ledger-link">View in audit log</span>
+                </div>
+
+                {/* Message 2 */}
+                <div className="home-specimen__msg">
+                  <div className="avatar-square avatar-square--accent">SY</div>
+                  <div className="home-specimen__msg-body">
+                    <div className="home-specimen__msg-meta">
+                      <span className="home-specimen__msg-author">Sumit Yadav</span>
+                      <RoleGlyph level={3} />
+                      <span className="home-specimen__msg-time">09:43</span>
+                    </div>
+                    <div className="home-specimen__msg-text">
+                      Acknowledged. Rolling deployment to European cluster will proceed next.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Specimen Composer */}
+              <div className="home-specimen__composer">
+                <div className="home-specimen__composer-input">
+                  <span className="home-specimen__prompt">/</span>
+                  <span className="home-specimen__code-preview">rooms</span>
+                  <span className="home-specimen__caret" />
+                </div>
+                <button className="btn-accent btn-sm" tabIndex={-1}>Send</button>
+              </div>
+            </div>
+
+            {/* Specimen Right Panel */}
+            <div className="home-specimen__panel">
+              <div className="home-specimen__panel-section">
+                <span className="home-specimen__panel-heading">Room details</span>
+                <p className="home-specimen__panel-desc">
+                  Primary coordination feed for infrastructure updates, deployment announcements, and operational alerts.
+                </p>
+              </div>
+
+              <div className="home-specimen__panel-section">
+                <span className="home-specimen__panel-heading">Online members (4)</span>
+                <div className="home-specimen__member-list">
+                  <div className="home-specimen__member-row">
+                    <span className="presence-dot online" />
+                    <span>Sumit Yadav</span>
+                    <RoleGlyph level={3} />
+                  </div>
+                  <div className="home-specimen__member-row">
+                    <span className="presence-dot online" />
+                    <span>Marcus Vance</span>
+                    <RoleGlyph level={2} />
+                  </div>
+                  <div className="home-specimen__member-row">
+                    <span className="presence-dot online" />
+                    <span>Devon Chen</span>
+                    <RoleGlyph level={1} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Features Bento ── */}
-      <section className="home-features" id="features">
-        <div className="home-section-header reveal">
-          <span className="home-section-tag">Features</span>
-          <h2>Everything your team needs</h2>
-          <p>Built for security-first organizations that demand speed and transparency.</p>
+      {/* ── Architecture & Principles Grid ── */}
+      <section className="home-principles">
+        <div className="home-section-lead">
+          <span className="home-section-kicker">Core Architecture</span>
+          <h2 className="home-section-title">Engineered for security and operational focus</h2>
+          <p className="home-section-sub">
+            Built from first principles: no decorative bloat, no distracting animations, and strictly bounded permissions.
+          </p>
         </div>
 
-        <div className="home-bento reveal">
-          {/* Large card */}
-          <div className="home-bento__card home-bento__card--lg">
-            <div className="home-bento__card-glow home-bento__card-glow--indigo"></div>
-            <div className="home-bento__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
+        <div className="home-grid">
+          {/* Card 1 */}
+          <div className="home-card">
+            <div className="home-card__header">
+              <div className="home-card__glyph-row">
+                <RoleGlyph level={1} />
+                <RoleGlyph level={2} />
+                <RoleGlyph level={3} />
+              </div>
+              <span className="home-card__label">Governance</span>
             </div>
-            <h3>Real-time Messaging</h3>
-            <p>
-              Instant delivery powered by WebSockets. Direct messages, group rooms, file sharing,
-              and slash commands — all with zero lag.
+            <h3 className="home-card__title">Three-tier role hierarchy</h3>
+            <p className="home-card__text">
+              Strict access levels (Member, Moderator, SuperAdmin) are validated on every socket event and REST endpoint.
+              Visual role glyphs replace arbitrary colored tags.
             </p>
           </div>
 
-          {/* Small card */}
-          <div className="home-bento__card">
-            <div className="home-bento__card-glow home-bento__card-glow--violet"></div>
-            <div className="home-bento__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
+          {/* Card 2 */}
+          <div className="home-card">
+            <div className="home-card__header">
+              <span className="home-card__mono-badge">duplex :// 50ms</span>
+              <span className="home-card__label">Real-time</span>
             </div>
-            <h3>Role-Based Access</h3>
-            <p>Granular permissions — user, moderator, and admin tiers with fine-grained controls.</p>
+            <h3 className="home-card__title">Low-latency socket duplex</h3>
+            <p className="home-card__text">
+              Direct connection via WebSocket streams messages, typing status, and presence changes instantaneously.
+              Fallback mechanisms ensure seamless reconnection.
+            </p>
           </div>
 
-          {/* Small card */}
-          <div className="home-bento__card">
-            <div className="home-bento__card-glow home-bento__card-glow--rose"></div>
-            <div className="home-bento__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
+          {/* Card 3 */}
+          <div className="home-card">
+            <div className="home-card__header">
+              <span className="home-card__mono-badge">ledger / audit</span>
+              <span className="home-card__label">Compliance</span>
             </div>
-            <h3>Encrypted Rooms</h3>
-            <p>Private, invite-only spaces for sensitive discussions and strategic planning.</p>
+            <h3 className="home-card__title">Immutable audit ledger</h3>
+            <p className="home-card__text">
+              Every critical administrative action—user kick, ban, mute, role promotion, or room modification—is
+              permanently inscribed with timestamp, actor, and target details.
+            </p>
           </div>
 
-          {/* Large card */}
-          <div className="home-bento__card home-bento__card--lg">
-            <div className="home-bento__card-glow home-bento__card-glow--emerald"></div>
-            <div className="home-bento__icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
+          {/* Card 4 */}
+          <div className="home-card">
+            <div className="home-card__header">
+              <span className="home-card__mono-badge">&gt; /commands</span>
+              <span className="home-card__label">Efficiency</span>
             </div>
-            <h3>Comprehensive Audit Logs</h3>
-            <p>
-              Immutable activity logs for every action — message edits, deletions, role changes,
-              and room modifications. Built for compliance.
+            <h3 className="home-card__title">Keyboard-first slash commands</h3>
+            <p className="home-card__text">
+              Direct moderation without leaving the keyboard. Type / in the composer to access a floating menu
+              with auto-complete, parameter hints, and role-based gating.
             </p>
           </div>
         </div>
       </section>
 
-      {/* ── How It Works ── */}
-      <section className="home-steps" id="steps">
-        <div className="home-section-header reveal">
-          <span className="home-section-tag">How it works</span>
-          <h2>Up and running in minutes</h2>
-          <p>Three simple steps to transform your team communication.</p>
+      {/* ── Technical Specifications Table ── */}
+      <section className="home-specs">
+        <div className="home-section-lead">
+          <span className="home-section-kicker">Specifications</span>
+          <h2 className="home-section-title">System parameters and stack</h2>
         </div>
 
-        <div className="home-steps__grid reveal">
-          {[
-            {
-              step: "01",
-              title: "Create your account",
-              desc: "Register with your email and set up your profile in seconds.",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="8.5" cy="7" r="4" />
-                  <line x1="20" y1="8" x2="20" y2="14" />
-                  <line x1="23" y1="11" x2="17" y2="11" />
-                </svg>
-              ),
-            },
-            {
-              step: "02",
-              title: "Join or create rooms",
-              desc: "Browse public rooms or create private ones for your team.",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-              ),
-            },
-            {
-              step: "03",
-              title: "Start collaborating",
-              desc: "Send messages, share files, and manage your workspace.",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
-              ),
-            },
-          ].map((item) => (
-            <div className="home-step-card" key={item.step}>
-              <span className="home-step-card__num">{item.step}</span>
-              <div className="home-step-card__icon">{item.icon}</div>
-              <h3>{item.title}</h3>
-              <p>{item.desc}</p>
-            </div>
-          ))}
+        <div className="home-specs-table-container">
+          <table className="home-specs-table">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Specification</th>
+                <th>Standard</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="mono-cell">Authentication</td>
+                <td>JSON Web Tokens (JWT) with HMAC SHA-256 signing</td>
+                <td className="muted-cell">RFC 7519</td>
+              </tr>
+              <tr>
+                <td className="mono-cell">Transport</td>
+                <td>Bidirectional WebSocket with automatic heartbeat & reconnect</td>
+                <td className="muted-cell">Socket.io 4.x</td>
+              </tr>
+              <tr>
+                <td className="mono-cell">Authorization</td>
+                <td>3-Tier Role-Based Access Control (Member: 1, Mod: 2, Admin: 3)</td>
+                <td className="muted-cell">RBAC Core</td>
+              </tr>
+              <tr>
+                <td className="mono-cell">Attachments</td>
+                <td>Isolated file storage with mime-type validation & size bounds</td>
+                <td className="muted-cell">Multipart buffer</td>
+              </tr>
+              <tr>
+                <td className="mono-cell">Design system</td>
+                <td>Strict typographic scale, 120ms transitions, WCAG 4.5:1 contrast</td>
+                <td className="muted-cell">Quiet Minimalist</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
-      {/* ── CTA Banner ── */}
-      <section className="home-cta-banner reveal">
-        <div className="home-cta-banner__inner">
-          <div className="home-cta-banner__glow"></div>
-          <h2>Ready to upgrade your team communication?</h2>
-          <p>Join teams already using InfraChat for secure, efficient collaboration.</p>
+      {/* ── Ready Callout ── */}
+      <section className="home-bottom-cta">
+        <div className="home-bottom-cta__inner">
+          <h2 className="home-bottom-cta__title">Ready to access the workspace?</h2>
+          <p className="home-bottom-cta__sub">
+            Connect to your team room channels and start communicating with zero distraction.
+          </p>
           <div className="home-hero__cta">
             {user ? (
-              <button className="home-btn home-btn--primary" onClick={() => navigate("/workspace")}>
-                Go to Workspace
+              <button
+                className="btn-accent home-cta-btn"
+                onClick={() => navigate("/workspace")}
+              >
+                Open workspace
               </button>
             ) : (
               <>
-                <button className="home-btn home-btn--primary" onClick={() => navigate("/register")}>
-                  Get Started Free
+                <button
+                  className="btn-accent home-cta-btn"
+                  onClick={() => navigate("/register")}
+                >
+                  Create account
                 </button>
-                <button className="home-btn home-btn--ghost" onClick={() => navigate("/login")}>
-                  Sign In
+                <button
+                  className="btn-quiet home-cta-btn"
+                  onClick={() => navigate("/login")}
+                >
+                  Sign in
                 </button>
               </>
             )}
@@ -251,31 +384,28 @@ function Home() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
+      {/* ── Minimalist Footer ── */}
       <footer className="home-footer">
         <div className="home-footer__inner">
           <div className="home-footer__brand">
-            <span className="home-footer__logo">InfraChat</span>
-            <p>Secure enterprise messaging for modern teams.</p>
+            <div className="brand-mark" aria-hidden="true">
+              <span className="brand-mark__bar" style={{ height: "6px" }} />
+              <span className="brand-mark__bar" style={{ height: "10px" }} />
+              <span className="brand-mark__bar" style={{ height: "14px" }} />
+            </div>
+            <span className="home-footer__brand-text">Internal Network</span>
           </div>
+
           <div className="home-footer__links">
-            <div className="home-footer__col">
-              <h4>Product</h4>
-              <span>Messaging</span>
-              <span>Rooms</span>
-              <span>File Sharing</span>
-              <span>Audit Logs</span>
-            </div>
-            <div className="home-footer__col">
-              <h4>Security</h4>
-              <span>Encryption</span>
-              <span>RBAC</span>
-              <span>Compliance</span>
-            </div>
+            <Link to="/workspace">Workspace</Link>
+            <Link to="/login">Sign in</Link>
+            <Link to="/register">Create account</Link>
+            <Link to="/audit">Audit logs</Link>
           </div>
-        </div>
-        <div className="home-footer__bottom">
-          <p>&copy; {new Date().getFullYear()} InfraChat. All rights reserved.</p>
+
+          <div className="home-footer__copy">
+            &copy; {new Date().getFullYear()} Internal Network. All rights reserved.
+          </div>
         </div>
       </footer>
     </div>

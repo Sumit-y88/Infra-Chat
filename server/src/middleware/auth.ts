@@ -1,9 +1,26 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import User, { IUser } from '../models/User';
 
-const auth = async (req, res, next) => {
+declare global {
+  namespace Express {
+    interface Request {
+      user?: IUser;
+    }
+  }
+}
+
+interface JwtPayload {
+  id: string;
+  role: number;
+}
+
+export const auth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void | Response> => {
   try {
-    // Check authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -12,13 +29,11 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // Extract token
     const token = authHeader.split(' ')[1];
+    const secret = process.env.JWT_SECRET || 'fallback_secret';
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, secret) as JwtPayload;
 
-    // Find user
     const user = await User.findById(decoded.id);
 
     if (!user) {
@@ -27,23 +42,20 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // Check if user is banned
     if (user.isBanned) {
       return res.status(403).json({
         message: 'Your account has been banned.',
       });
     }
 
-    // Check if mute expired
-    user.checkMuteStatus?.();
+    // Auto-check mute expiry and persist if updated
+    if (user.checkMuteStatus()) {
+      await user.save();
+    }
 
-    // Attach user to request
     req.user = user;
-
     next();
-  } catch (error) {
-    console.error('Auth Middleware Error:', error.message);
-
+  } catch (error: any) {
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         message: 'Invalid token.',
@@ -56,10 +68,11 @@ const auth = async (req, res, next) => {
       });
     }
 
+    console.error('Auth Middleware Error:', error.message);
     return res.status(500).json({
       message: 'Authentication failed.',
     });
   }
 };
 
-module.exports = auth;
+export default auth;

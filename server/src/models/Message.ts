@@ -1,6 +1,30 @@
-const mongoose = require('mongoose');
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-const messageSchema = new mongoose.Schema(
+export interface IAttachment {
+  url: string;
+  name: string;
+  size?: number;
+  type?: string;
+  publicId?: string;
+}
+
+export interface IMessage extends Document {
+  _id: Types.ObjectId;
+  content: string;
+  sender: Types.ObjectId;
+  room: Types.ObjectId;
+  type: 'text' | 'system' | 'command';
+  edited: boolean;
+  editedAt: Date | null;
+  deletedForEveryone: boolean;
+  attachments: IAttachment[];
+  createdAt: Date;
+  updatedAt: Date;
+  markAsEdited(newContent: string): void;
+  softDelete(): void;
+}
+
+const messageSchema = new Schema<IMessage>(
   {
     content: {
       type: String,
@@ -9,12 +33,12 @@ const messageSchema = new mongoose.Schema(
       maxlength: [2000, 'Message cannot exceed 2000 characters'],
     },
     sender: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
     room: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'Room',
       required: true,
     },
@@ -41,6 +65,7 @@ const messageSchema = new mongoose.Schema(
         name: { type: String, required: true },
         size: { type: Number },
         type: { type: String },
+        publicId: { type: String, default: null },
       },
     ],
   },
@@ -49,44 +74,38 @@ const messageSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for efficient retrieval
 messageSchema.index({ room: 1, createdAt: -1 });
 messageSchema.index({ sender: 1, createdAt: -1 });
 messageSchema.index({ type: 1 });
 
-// Prevent empty messages after trimming (allow empty content if attachments exist)
-messageSchema.pre('validate', function (next) {
+messageSchema.pre('validate', function () {
   if (typeof this.content === 'string') {
     this.content = this.content.trim();
   }
 
-  // Allow empty content when attachments are present
-  const hasAttachments = this.attachments && this.attachments.length > 0;
+  const hasAttachments = Boolean(this.attachments && this.attachments.length > 0);
 
   if (!this.content && !hasAttachments) {
-    return next(new Error('Message content is required'));
+    throw new Error('Message content is required');
   }
 
-  // Ensure content is at least empty string when only attachments are sent
   if (!this.content && hasAttachments) {
     this.content = '';
   }
-
-  next();
 });
 
-// Helper: mark message as edited
-messageSchema.methods.markAsEdited = function (newContent) {
+messageSchema.methods.markAsEdited = function (newContent: string): void {
   this.content = newContent.trim();
   this.edited = true;
   this.editedAt = new Date();
 };
 
-// Helper: soft delete for everyone
-messageSchema.methods.softDelete = function () {
+messageSchema.methods.softDelete = function (): void {
   this.content = 'This message was deleted';
   this.deletedForEveryone = true;
   this.type = 'system';
+  this.attachments = [];
 };
 
-module.exports = mongoose.model('Message', messageSchema);
+export const Message: Model<IMessage> = mongoose.model<IMessage>('Message', messageSchema);
+export default Message;

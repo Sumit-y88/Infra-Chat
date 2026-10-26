@@ -1,11 +1,14 @@
 import { io } from "socket.io-client";
+import { BACKEND_URL } from "./api";
 
 let socket = null;
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || BACKEND_URL;
 
 export const connectSocket = (token) => {
   if (!token) return null;
 
-  socket = io("https://infra-chat.onrender.com", {
+  socket = io(SOCKET_URL, {
     auth: { token },
   });
 

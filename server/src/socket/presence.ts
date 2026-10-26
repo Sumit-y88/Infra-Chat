@@ -2,27 +2,41 @@
 // Structure:
 // roomId -> Map(userId -> { userId, username, socketIds: Set<string> })
 
-const onlineUsers = new Map();
-const userSockets = new Map(); // userId -> Set(socketId)
+export type PresenceStatus = 'online' | 'away' | 'offline';
 
-// ── Presence status tracking ──
-// userId -> { status: 'online'|'away'|'offline', lastActivity: timestamp, timer: NodeJS.Timeout }
+interface RoomUserEntry {
+  userId: string;
+  username: string;
+  socketIds: Set<string>;
+}
+
+interface UserPresenceEntry {
+  status: PresenceStatus;
+  lastActivity: number;
+  timer?: NodeJS.Timeout;
+}
+
+const onlineUsers = new Map<string, Map<string, RoomUserEntry>>();
+const userSockets = new Map<string, Set<string>>(); // userId -> Set(socketId)
+
 const AWAY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-const userPresence = new Map();
-let presenceChangeCallback = null;
+const userPresence = new Map<string, UserPresenceEntry>();
+let presenceChangeCallback: ((userId: string, status: PresenceStatus) => void) | null = null;
 
-const setPresenceCallback = (callback) => {
+export const setPresenceCallback = (
+  callback: (userId: string, status: PresenceStatus) => void
+): void => {
   presenceChangeCallback = callback;
 };
 
-const getUserStatus = (userId) => {
+export const getUserStatus = (userId: string): PresenceStatus => {
   const entry = userPresence.get(userId);
   return entry ? entry.status : 'offline';
 };
 
-const setUserOnline = (userId) => {
+export const setUserOnline = (userId: string): void => {
   const existing = userPresence.get(userId);
-  if (existing && existing.timer) {
+  if (existing?.timer) {
     clearTimeout(existing.timer);
   }
 
@@ -44,7 +58,7 @@ const setUserOnline = (userId) => {
   }
 };
 
-const touchUserActivity = (userId) => {
+export const touchUserActivity = (userId: string): void => {
   const entry = userPresence.get(userId);
   if (!entry) return;
 
@@ -71,13 +85,14 @@ const touchUserActivity = (userId) => {
   }
 };
 
-const setUserOffline = (userId) => {
-  const entry = userPresence.get(userId);
-  if (entry && entry.timer) {
-    clearTimeout(entry.timer);
-  }
-  // Only go offline if no more sockets
-  if (!userSockets.has(userId) || userSockets.get(userId).size === 0) {
+export const setUserOffline = (userId: string): void => {
+  // Only go offline if no remaining active sockets for this user
+  const sockets = userSockets.get(userId);
+  if (!sockets || sockets.size === 0) {
+    const entry = userPresence.get(userId);
+    if (entry?.timer) {
+      clearTimeout(entry.timer);
+    }
     userPresence.delete(userId);
     if (presenceChangeCallback) {
       presenceChangeCallback(userId, 'offline');
@@ -85,20 +100,25 @@ const setUserOffline = (userId) => {
   }
 };
 
-const getAllUserStatuses = () => {
-  const statuses = {};
+export const getAllUserStatuses = (): Record<string, PresenceStatus> => {
+  const statuses: Record<string, PresenceStatus> = {};
   for (const [userId, entry] of userPresence.entries()) {
     statuses[userId] = entry.status;
   }
   return statuses;
 };
 
-const addUserToRoom = (roomId, userId, username, socketId) => {
+export const addUserToRoom = (
+  roomId: string,
+  userId: string,
+  username: string,
+  socketId: string
+): void => {
   if (!onlineUsers.has(roomId)) {
     onlineUsers.set(roomId, new Map());
   }
 
-  const roomUsers = onlineUsers.get(roomId);
+  const roomUsers = onlineUsers.get(roomId)!;
 
   if (!roomUsers.has(userId)) {
     roomUsers.set(userId, {
@@ -108,13 +128,17 @@ const addUserToRoom = (roomId, userId, username, socketId) => {
     });
   }
 
-  roomUsers.get(userId).socketIds.add(socketId);
+  roomUsers.get(userId)!.socketIds.add(socketId);
 };
 
-const removeUserFromRoom = (roomId, userId, socketId = null) => {
+export const removeUserFromRoom = (
+  roomId: string,
+  userId: string,
+  socketId: string | null = null
+): void => {
   if (!onlineUsers.has(roomId)) return;
 
-  const roomUsers = onlineUsers.get(roomId);
+  const roomUsers = onlineUsers.get(roomId)!;
   const userEntry = roomUsers.get(userId);
 
   if (!userEntry) return;
@@ -134,8 +158,10 @@ const removeUserFromRoom = (roomId, userId, socketId = null) => {
   }
 };
 
-const removeUserFromAllRooms = (socketId) => {
-  const removedFrom = [];
+export const removeUserFromAllRooms = (
+  socketId: string
+): Array<{ roomId: string; userId: string; username: string }> => {
+  const removedFrom: Array<{ roomId: string; userId: string; username: string }> = [];
 
   for (const [roomId, users] of onlineUsers.entries()) {
     for (const [userId, data] of users.entries()) {
@@ -161,45 +187,48 @@ const removeUserFromAllRooms = (socketId) => {
   return removedFrom;
 };
 
-const getRoomOnlineUsers = (roomId) => {
+export const getRoomOnlineUsers = (
+  roomId: string
+): Array<{ userId: string; username: string; status: PresenceStatus }> => {
   if (!onlineUsers.has(roomId)) return [];
 
-  return Array.from(onlineUsers.get(roomId).values()).map((user) => ({
+  return Array.from(onlineUsers.get(roomId)!.values()).map((user) => ({
     userId: user.userId,
     username: user.username,
     status: getUserStatus(user.userId),
   }));
 };
 
-const isUserOnlineInRoom = (roomId, userId) => {
+export const isUserOnlineInRoom = (roomId: string, userId: string): boolean => {
   if (!onlineUsers.has(roomId)) return false;
-  return onlineUsers.get(roomId).has(userId);
+  return onlineUsers.get(roomId)!.has(userId);
 };
 
-const addUserSocket = (userId, socketId) => {
+export const addUserSocket = (userId: string, socketId: string): void => {
   if (!userSockets.has(userId)) {
     userSockets.set(userId, new Set());
   }
-  userSockets.get(userId).add(socketId);
+  userSockets.get(userId)!.add(socketId);
 };
 
-const removeUserSocket = (userId, socketId) => {
-  if (!userSockets.has(userId)) return;
+export const removeUserSocket = (userId: string, socketId: string): void => {
+  const set = userSockets.get(userId);
+  if (!set) return;
 
-  userSockets.get(userId).delete(socketId);
+  set.delete(socketId);
 
-  if (userSockets.get(userId).size === 0) {
+  if (set.size === 0) {
     userSockets.delete(userId);
   }
 };
 
-const getUserSocketIds = (userId) => {
-  if (!userSockets.has(userId)) return [];
-  return Array.from(userSockets.get(userId));
+export const getUserSocketIds = (userId: string): string[] => {
+  const set = userSockets.get(userId);
+  if (!set) return [];
+  return Array.from(set);
 };
 
-
-module.exports = {
+export default {
   addUserToRoom,
   removeUserFromRoom,
   removeUserFromAllRooms,

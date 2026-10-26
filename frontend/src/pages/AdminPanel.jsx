@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { getRoleName } from "../utils/roles";
+import RoleGlyph from "../components/RoleGlyph";
 
 function AdminPanel() {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ function AdminPanel() {
         role: Number(newRole),
       });
 
-      setMessage("User role updated successfully");
+      setMessage("User role updated successfully.");
       fetchUsers();
     } catch (err) {
       setMessage(err.response?.data?.message || "Failed to update role");
@@ -38,11 +39,11 @@ function AdminPanel() {
 
   if (!user || user.role < 3) {
     return (
-      <div className="page-shell">
-        <div className="page-content">
-          <div className="card" style={{ padding: "20px" }}>
-            <h2>Access Denied</h2>
-            <p className="page-subtitle">Only SuperAdmin can access this page.</p>
+      <div className="table-page">
+        <div className="table-page__inner">
+          <div className="notice-box danger">
+            <h2>Access denied</h2>
+            <p>SuperAdmin privileges are required to access this panel.</p>
           </div>
         </div>
       </div>
@@ -50,57 +51,67 @@ function AdminPanel() {
   }
 
   return (
-    <div className="page-shell">
-      <div className="page-content">
-        <div className="page-header">
-          <div>
-            <h1>Admin Panel</h1>
-            <p className="page-subtitle">
-              Manage user roles and platform access.
-            </p>
-          </div>
+    <div className="table-page">
+      <div className="table-page__inner">
+        <div className="table-page__header">
+          <h1 className="table-page__title">User roles</h1>
+          <p className="table-page__subtitle">
+            Manage permissions and access levels across the platform.
+          </p>
         </div>
 
-        {message && <p className="info-text">{message}</p>}
+        {message && <div className="notice-box info">{message}</div>}
 
-        <div className="table-card">
-          <div className="table-list">
-            <div className="table-row table-head">
-              <div>User</div>
-              <div>Current Role</div>
-              <div>Change Role</div>
-            </div>
+        <div className="data-table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">User</th>
+                <th scope="col">Current role</th>
+                <th scope="col">Change role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const id = u._id || u.id;
+                const isSelf = user.id === id;
 
-            {users.map((u) => {
-              const id = u._id || u.id;
-              const isSelf = user.id === id;
+                return (
+                  <tr key={id}>
+                    <td>
+                      <div className="data-table__user-cell">
+                        <span className="data-table__username">{u.username}</span>
+                        <span className="data-table__email">{u.email}</span>
+                      </div>
+                    </td>
 
-              return (
-                <div className="table-row" key={id}>
-                  <div>
-                    <div className="table-cell-title">{u.username}</div>
-                    <div className="table-cell-sub">{u.email}</div>
-                  </div>
+                    <td>
+                      <div className="data-table__role-cell">
+                        <RoleGlyph level={u.role} />
+                        <span>{getRoleName(u.role)}</span>
+                      </div>
+                    </td>
 
-                  <div>
-                    <span className="status-pill">{getRoleName(u.role)}</span>
-                  </div>
-
-                  <div className="admin-actions">
-                    <select
-                      value={u.role}
-                      onChange={(e) => updateRole(id, e.target.value)}
-                      disabled={isSelf}
-                    >
-                      <option value={1}>Member</option>
-                      <option value={2}>Moderator</option>
-                      <option value={3}>SuperAdmin</option>
-                    </select>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                    <td>
+                      <div className="data-table__action-cell">
+                        <select
+                          className="table-select"
+                          value={u.role}
+                          onChange={(e) => updateRole(id, e.target.value)}
+                          disabled={isSelf}
+                          aria-label={`Change role for ${u.username}`}
+                        >
+                          <option value={1}>Member</option>
+                          <option value={2}>Moderator</option>
+                          <option value={3}>SuperAdmin</option>
+                        </select>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

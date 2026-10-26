@@ -1,36 +1,66 @@
-const express = require('express');
-const Room = require('../models/Room');
-const AuditLog = require('../models/AuditLog');
-const User = require('../models/User');
-const auth = require('../middleware/auth');
-const { requireRole, ROLES } = require('../middleware/rbac');
-const { getIO } = require('../socket');
-const { getUserSocketIds, removeUserFromRoom, getRoomOnlineUsers } = require('../socket/presence');
+import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
+import Room from '../models/Room';
+import AuditLog from '../models/AuditLog';
+import User from '../models/User';
+import auth from '../middleware/auth';
+import { requireRole, ROLES } from '../middleware/rbac';
+import { getIO } from '../socket';
+import { getUserSocketIds, removeUserFromRoom, getRoomOnlineUsers } from '../socket/presence';
 
-const router = express.Router();
+const router = Router();
 
-const isSameId = (a, b) => a.toString() === b.toString();
+const isSameId = (a: any, b: any): boolean => a.toString() === b.toString();
 
 // GET /api/rooms - List all rooms (public + joined private rooms)
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req: Request, res: Response) => {
   try {
+    const currentUser = req.user!;
     const rooms = await Room.find({
-      $or: [{ isPrivate: false }, { members: req.user._id }],
+      $or: [{ isPrivate: false }, { members: currentUser._id }],
     })
       .populate('createdBy', 'username role')
       .populate('members', 'username role avatar')
       .sort({ createdAt: -1 });
 
     return res.json({ rooms });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get Rooms Error:', error.message);
     return res.status(500).json({ message: 'Server error while fetching rooms.' });
   }
 });
 
-// POST /api/rooms - Create room (Moderator+)
-router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
+// GET /api/rooms/:id - Get single room
+router.get('/:id', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
+
+    const room = await Room.findById(req.params.id)
+      .populate('createdBy', 'username role')
+      .populate('members', 'username role avatar');
+
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found.' });
+    }
+
+    const currentUser = req.user!;
+    if (room.isPrivate && !room.isMember(currentUser._id) && currentUser.role < ROLES.SUPERADMIN) {
+      return res.status(403).json({ message: 'You do not have access to this private room.' });
+    }
+
+    return res.json({ room });
+  } catch (error: any) {
+    console.error('Get Single Room Error:', error.message);
+    return res.status(500).json({ message: 'Server error while fetching room.' });
+  }
+});
+
+// POST /api/rooms - Create room (Moderator+)
+router.post('/', auth, requireRole(ROLES.MODERATOR), async (req: Request, res: Response) => {
+  try {
+    const currentUser = req.user!;
     let { name, description, isPrivate, roomType } = req.body;
 
     if (!name || !name.trim()) {
@@ -40,7 +70,6 @@ router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
     name = name.trim();
     description = description ? description.trim() : '';
 
-    // Determine roomType: explicit roomType takes priority over isPrivate flag
     if (roomType && ['public', 'private', 'broadcast'].includes(roomType)) {
       isPrivate = roomType === 'private';
     } else {
@@ -48,8 +77,7 @@ router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
       roomType = isPrivate ? 'private' : 'public';
     }
 
-    // Only SuperAdmin can create broadcast rooms
-    if (roomType === 'broadcast' && req.user.role < ROLES.SUPERADMIN) {
+    if (roomType === 'broadcast' && currentUser.role < ROLES.SUPERADMIN) {
       return res.status(403).json({ message: 'Only SuperAdmins can create broadcast rooms.' });
     }
 
@@ -63,16 +91,16 @@ router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
       description,
       isPrivate,
       roomType,
-      createdBy: req.user._id,
-      members: [req.user._id],
-      moderators: [req.user._id],
+      createdBy: currentUser._id,
+      members: [currentUser._id],
+      moderators: [currentUser._id],
     });
 
     await AuditLog.create({
       action: 'ROOM_CREATED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       room: room._id,
-      details: `${req.user.username} created room ${room.name}`,
+      details: `${currentUser.username} created room ${room.name}`,
       metadata: { isPrivate: room.isPrivate },
     });
 
@@ -88,11 +116,11 @@ router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
       message: 'Room created successfully.',
       room,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create Room Error:', error.message);
 
     if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map((e) => e.message);
+      const messages = Object.values(error.errors).map((e: any) => e.message);
       return res.status(400).json({ message: messages.join(', ') });
     }
 
@@ -101,19 +129,24 @@ router.post('/', auth, requireRole(ROLES.MODERATOR), async (req, res) => {
 });
 
 // POST /api/rooms/:id/join
-router.post('/:id/join', auth, async (req, res) => {
+router.post('/:id/join', auth, async (req: Request, res: Response) => {
   try {
-    const room = await Room.findById(req.params.id);
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
 
+    const room = await Room.findById(req.params.id);
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
-    if (room.isBanned(req.user._id)) {
+    const currentUser = req.user!;
+
+    if (room.isBanned(currentUser._id)) {
       return res.status(403).json({ message: 'You are banned from this room.' });
     }
 
-    if (room.isMember(req.user._id)) {
+    if (room.isMember(currentUser._id)) {
       return res.status(400).json({ message: 'Already a member of this room.' });
     }
 
@@ -123,7 +156,7 @@ router.post('/:id/join', auth, async (req, res) => {
       });
     }
 
-    room.addMember(req.user._id);
+    room.addMember(currentUser._id);
     await room.save();
 
     await room.populate('members', 'username role avatar');
@@ -137,29 +170,34 @@ router.post('/:id/join', auth, async (req, res) => {
       message: 'Joined room successfully.',
       room,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Join Room Error:', error.message);
     return res.status(500).json({ message: 'Server error while joining room.' });
   }
 });
 
 // POST /api/rooms/:id/leave
-router.post('/:id/leave', auth, async (req, res) => {
+router.post('/:id/leave', auth, async (req: Request, res: Response) => {
   try {
-    const room = await Room.findById(req.params.id);
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
 
+    const room = await Room.findById(req.params.id);
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
-    if (!room.isMember(req.user._id)) {
+    const currentUser = req.user!;
+
+    if (!room.isMember(currentUser._id)) {
       return res.status(400).json({ message: 'You are not a member of this room.' });
     }
 
-    const isCreator = isSameId(room.createdBy, req.user._id);
+    const isCreator = isSameId(room.createdBy, currentUser._id);
     const isOnlyModerator =
       room.moderators.length === 1 &&
-      room.moderators.some((id) => isSameId(id, req.user._id));
+      room.moderators.some((id) => isSameId(id, currentUser._id));
 
     if (isCreator && isOnlyModerator) {
       return res.status(400).json({
@@ -167,10 +205,8 @@ router.post('/:id/leave', auth, async (req, res) => {
       });
     }
 
-    room.removeMember(req.user._id);
-    room.moderators = room.moderators.filter(
-      (id) => !isSameId(id, req.user._id)
-    );
+    room.removeMember(currentUser._id);
+    room.moderators = room.moderators.filter((id) => !isSameId(id, currentUser._id));
 
     await room.save();
 
@@ -180,15 +216,19 @@ router.post('/:id/leave', auth, async (req, res) => {
     }
 
     return res.json({ message: 'Left the room successfully.' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Leave Room Error:', error.message);
     return res.status(500).json({ message: 'Server error while leaving room.' });
   }
 });
 
 // GET /api/rooms/:id/members
-router.get('/:id/members', auth, async (req, res) => {
+router.get('/:id/members', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
+
     const room = await Room.findById(req.params.id).populate(
       'members',
       'username role avatar email'
@@ -198,22 +238,27 @@ router.get('/:id/members', auth, async (req, res) => {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
-    if (room.isPrivate && !room.isMember(req.user._id)) {
+    const currentUser = req.user!;
+    if (room.isPrivate && !room.isMember(currentUser._id)) {
       return res.status(403).json({
         message: 'You do not have access to view members of this private room.',
       });
     }
 
     return res.json({ members: room.members });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get Members Error:', error.message);
     return res.status(500).json({ message: 'Server error while fetching members.' });
   }
 });
 
 // PATCH /api/rooms/:id - Update room details
-router.patch('/:id', auth, async (req, res) => {
+router.patch('/:id', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
+
     const { name, description, isPrivate } = req.body;
 
     const room = await Room.findById(req.params.id);
@@ -221,8 +266,9 @@ router.patch('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
+    const currentUser = req.user!;
     const canManage =
-      room.isRoomModerator(req.user._id) || req.user.role >= ROLES.SUPERADMIN;
+      room.isRoomModerator(currentUser._id) || currentUser.role >= ROLES.SUPERADMIN;
 
     if (!canManage) {
       return res.status(403).json({
@@ -262,26 +308,31 @@ router.patch('/:id', auth, async (req, res) => {
       message: 'Room updated successfully.',
       room,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update Room Error:', error.message);
     return res.status(500).json({ message: 'Server error while updating room.' });
   }
 });
 
 // DELETE /api/rooms/:id - Delete room
-router.delete('/:id', auth, requireRole(ROLES.SUPERADMIN), async (req, res) => {
+router.delete('/:id', auth, requireRole(ROLES.SUPERADMIN), async (req: Request, res: Response) => {
   try {
-    const room = await Room.findById(req.params.id);
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
 
+    const room = await Room.findById(req.params.id);
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
+    const currentUser = req.user!;
+
     await AuditLog.create({
       action: 'ROOM_DELETED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       room: room._id,
-      details: `${req.user.username} deleted room ${room.name}`,
+      details: `${currentUser.username} deleted room ${room.name}`,
     });
 
     await Room.findByIdAndDelete(room._id);
@@ -292,19 +343,22 @@ router.delete('/:id', auth, requireRole(ROLES.SUPERADMIN), async (req, res) => {
     }
 
     return res.json({ message: 'Room deleted successfully.' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Delete Room Error:', error.message);
     return res.status(500).json({ message: 'Server error while deleting room.' });
   }
 });
 
 // POST /api/rooms/:id/members - Add member to room
-router.post('/:id/members', auth, async (req, res) => {
+router.post('/:id/members', auth, async (req: Request, res: Response) => {
   try {
-    const { userId } = req.body;
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
 
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required.' });
+    const { userId } = req.body;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(400).json({ message: 'Valid User ID is required.' });
     }
 
     const room = await Room.findById(req.params.id);
@@ -312,8 +366,9 @@ router.post('/:id/members', auth, async (req, res) => {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
+    const currentUser = req.user!;
     const canManage =
-      room.isRoomModerator(req.user._id) || req.user.role >= ROLES.SUPERADMIN;
+      room.isRoomModerator(currentUser._id) || currentUser.role >= ROLES.SUPERADMIN;
 
     if (!canManage) {
       return res.status(403).json({
@@ -340,10 +395,10 @@ router.post('/:id/members', auth, async (req, res) => {
 
     await AuditLog.create({
       action: 'USER_PROMOTED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       targetUser: targetUser._id,
       room: room._id,
-      details: `${req.user.username} added ${targetUser.username} to room ${room.name}`,
+      details: `${currentUser.username} added ${targetUser.username} to room ${room.name}`,
       metadata: { actionType: 'ROOM_MEMBER_ADDED' },
     });
 
@@ -356,15 +411,19 @@ router.post('/:id/members', auth, async (req, res) => {
       message: 'Member added successfully.',
       members: room.members,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Add Member Error:', error.message);
     return res.status(500).json({ message: 'Server error while adding member.' });
   }
 });
 
 // DELETE /api/rooms/:id/members/:userId - Remove member from room
-router.delete('/:id/members/:userId', auth, async (req, res) => {
+router.delete('/:id/members/:userId', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.params.userId)) {
+      return res.status(400).json({ message: 'Invalid ID format.' });
+    }
+
     const room = await Room.findById(req.params.id);
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
@@ -375,8 +434,9 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Target user not found.' });
     }
 
+    const currentUser = req.user!;
     const canManage =
-      room.isRoomModerator(req.user._id) || req.user.role >= ROLES.MODERATOR;
+      room.isRoomModerator(currentUser._id) || currentUser.role >= ROLES.MODERATOR;
 
     if (!canManage) {
       return res.status(403).json({
@@ -409,20 +469,18 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
 
     await AuditLog.create({
       action: 'USER_KICKED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       targetUser: targetUser._id,
       room: room._id,
-      details: `${req.user.username} removed ${targetUser.username} from room ${room.name}`,
+      details: `${currentUser.username} removed ${targetUser.username} from room ${room.name}`,
       metadata: { actionType: 'ROOM_MEMBER_REMOVED' },
     });
 
-    // Emit socket events to kick the removed user from the room in real-time
     const io = getIO();
     if (io) {
-      const roomId = req.params.id;
+      const roomId = req.params.id as string;
       const targetSocketIds = getUserSocketIds(targetUser._id.toString());
 
-      // Remove user's sockets from the Socket.io room and notify them
       for (const socketId of targetSocketIds) {
         const targetSocket = io.sockets.sockets.get(socketId);
         if (targetSocket) {
@@ -430,21 +488,18 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
           targetSocket.emit('room:kicked', {
             roomId,
             roomName: room.name,
-            message: `You have been removed from ${room.name} by ${req.user.username}.`,
+            message: `You have been removed from ${room.name} by ${currentUser.username}.`,
           });
         }
       }
 
-      // Update presence tracking
       removeUserFromRoom(roomId, targetUser._id.toString());
 
-      // Broadcast updated online users to remaining members
       io.to(roomId).emit('room:onlineUsers', {
         roomId,
         users: getRoomOnlineUsers(roomId),
       });
 
-      // Notify room members that a user was removed
       io.to(roomId).emit('room:member_removed', {
         roomId,
         userId: targetUser._id,
@@ -456,9 +511,9 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
 
     return res.json({
       message: 'Member removed successfully.',
-      members: updatedRoom.members,
+      members: updatedRoom?.members || [],
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Remove Member Error:', error.message);
     return res.status(500).json({
       message: 'Server error while removing member.',
@@ -466,23 +521,27 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
   }
 });
 
-
 // PATCH /api/rooms/:id/archive - Archive/unarchive room (SuperAdmin only)
-router.patch('/:id/archive', auth, requireRole(ROLES.SUPERADMIN), async (req, res) => {
+router.patch('/:id/archive', auth, requireRole(ROLES.SUPERADMIN), async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
+
     const room = await Room.findById(req.params.id);
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
+    const currentUser = req.user!;
     room.isArchived = !room.isArchived;
     await room.save();
 
     await AuditLog.create({
       action: room.isArchived ? 'ROOM_ARCHIVED' : 'ROOM_UNARCHIVED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       room: room._id,
-      details: `${req.user.username} ${room.isArchived ? 'archived' : 'unarchived'} room ${room.name}`,
+      details: `${currentUser.username} ${room.isArchived ? 'archived' : 'unarchived'} room ${room.name}`,
     });
 
     const io = getIO();
@@ -494,11 +553,10 @@ router.patch('/:id/archive', auth, requireRole(ROLES.SUPERADMIN), async (req, re
       message: `Room ${room.isArchived ? 'archived' : 'unarchived'} successfully.`,
       room,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Archive Room Error:', error.message);
     return res.status(500).json({ message: 'Server error while archiving room.' });
   }
 });
 
-
-module.exports = router;
+export default router;

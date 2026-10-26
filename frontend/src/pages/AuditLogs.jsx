@@ -3,6 +3,30 @@ import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { getRoleName } from "../utils/roles";
 import { formatMessageTime } from "../utils/time";
+import RoleGlyph from "../components/RoleGlyph";
+
+function isDangerAction(action) {
+  return action === "USER_KICKED" || action === "USER_BANNED";
+}
+
+function formatActionText(action) {
+  const map = {
+    USER_KICKED: "Kicked user",
+    USER_BANNED: "Banned user",
+    USER_UNBANNED: "Unbanned user",
+    USER_MUTED: "Muted user",
+    USER_UNMUTED: "Unmuted user",
+    USER_PROMOTED: "Promoted user",
+    USER_DEMOTED: "Demoted user",
+    ROOM_CREATED: "Created room",
+    ROOM_DELETED: "Deleted room",
+    ROOM_ARCHIVED: "Archived room",
+    ROOM_UNARCHIVED: "Unarchived room",
+    ROOM_ANNOUNCEMENT: "Posted announcement",
+    MESSAGE_DELETED: "Deleted message",
+  };
+  return map[action] || action;
+}
 
 function AuditLogs() {
   const { user } = useAuth();
@@ -28,13 +52,11 @@ function AuditLogs() {
 
   if (!user || user.role < 2) {
     return (
-      <div className="page-shell">
-        <div className="page-content">
-          <div className="card" style={{ padding: "20px" }}>
-            <h2>Access Denied</h2>
-            <p className="page-subtitle">
-              Only Moderator and SuperAdmin can access audit logs.
-            </p>
+      <div className="table-page">
+        <div className="table-page__inner">
+          <div className="notice-box danger">
+            <h2>Access denied</h2>
+            <p>Moderator or SuperAdmin privileges are required to view audit logs.</p>
           </div>
         </div>
       </div>
@@ -42,63 +64,86 @@ function AuditLogs() {
   }
 
   return (
-    <div className="page-shell">
-      <div className="page-content">
-        <div className="page-header">
-          <div>
-            <h1>Audit Logs</h1>
-            <p className="page-subtitle">
-              Review important room and moderation activity.
-            </p>
-          </div>
+    <div className="table-page">
+      <div className="table-page__inner">
+        <div className="table-page__header">
+          <h1 className="table-page__title">Audit log</h1>
+          <p className="table-page__subtitle">
+            Append-only record of privileged moderation and room operations.
+          </p>
         </div>
 
-        {message && <p className="error-text">{message}</p>}
+        {message && <div className="notice-box danger">{message}</div>}
 
-        <div className="table-card audit-grid">
+        <div className="data-table-container">
           {loading ? (
-            <div className="audit-row">
-              <p>Loading audit logs...</p>
-            </div>
+            <div className="table-page__loading">Loading audit records...</div>
           ) : logs.length === 0 ? (
-            <div className="audit-row">
-              <p>No audit logs found.</p>
-            </div>
+            <div className="table-page__loading">No audit records found.</div>
           ) : (
-            logs.map((log) => (
-              <div className="audit-row" key={log._id}>
-                <div className="audit-title">{log.action}</div>
-                <div className="audit-desc">
-                  {log.details || "No details available"}
-                </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Action</th>
+                  <th scope="col">Actor</th>
+                  <th scope="col">Target</th>
+                  <th scope="col">Room</th>
+                  <th scope="col">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => {
+                  const isDanger = isDangerAction(log.action);
+                  const actorRole = log.performedBy?.role || 1;
 
-                <div className="audit-meta">
-                  <span>
-                    <strong>By:</strong>{" "}
-                    {log.performedBy?.username || "Unknown"}
-                    {log.performedBy?.role
-                      ? ` (${getRoleName(log.performedBy.role)})`
-                      : ""}
-                  </span>
+                  return (
+                    <tr key={log._id}>
+                      <td>
+                        <span className={`data-table__action ${isDanger ? "danger" : ""}`}>
+                          {formatActionText(log.action)}
+                        </span>
+                        {log.details && (
+                          <span className="data-table__details">{log.details}</span>
+                        )}
+                      </td>
 
-                  {log.targetUser && (
-                    <span>
-                      <strong>Target:</strong> {log.targetUser.username}
-                    </span>
-                  )}
+                      <td>
+                        <div className="data-table__role-cell">
+                          <RoleGlyph level={actorRole} />
+                          <span>{log.performedBy?.username || "System"}</span>
+                        </div>
+                      </td>
 
-                  {log.room && (
-                    <span>
-                      <strong>Room:</strong> {log.room.name}
-                    </span>
-                  )}
+                      <td>
+                        {log.targetUser ? (
+                          <span className="data-table__cell-text">
+                            {log.targetUser.username}
+                          </span>
+                        ) : (
+                          <span className="data-table__cell-muted">—</span>
+                        )}
+                      </td>
 
-                  <span>
-                    <strong>Time:</strong> {formatMessageTime(log.createdAt)}
-                  </span>
-                </div>
-              </div>
-            ))
+                      <td>
+                        {log.room ? (
+                          <span className="data-table__cell-text">
+                            #{log.room.name}
+                          </span>
+                        ) : (
+                          <span className="data-table__cell-muted">—</span>
+                        )}
+                      </td>
+
+                      <td>
+                        <span className="data-table__cell-time">
+                          {formatMessageTime(log.createdAt)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </div>

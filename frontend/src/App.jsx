@@ -1,13 +1,10 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import RoomChat from "./pages/RoomChat";
-import DirectMessages from "./pages/DirectMessages";
-import Users from "./pages/Users";
 import Workspace from "./pages/Workspace";
 import Home from "./pages/Home";
 import "./App.css";
@@ -35,20 +32,29 @@ function App() {
           }
         />
 
-          <Route
-  path="/admin"
-  element={
-    <ProtectedRoute>
-      <AdminPanel />
-    </ProtectedRoute>
-  }
-/>
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/rooms/:id"
           element={
             <ProtectedRoute>
-              <RoomChat />
+              <Workspace />
             </ProtectedRoute>
           }
         />
@@ -57,19 +63,19 @@ function App() {
           path="/dm/:userId"
           element={
             <ProtectedRoute>
-              <DirectMessages />
+              <Workspace />
             </ProtectedRoute>
           }
         />
 
         <Route
-  path="/users"
-  element={
-    <ProtectedRoute>
-      <Users />
-    </ProtectedRoute>
-  }
-/>
+          path="/users"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/dashboard" replace />
+            </ProtectedRoute>
+          }
+        />
 
 <Route
   path="/audit"

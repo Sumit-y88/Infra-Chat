@@ -1,7 +1,25 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import bcrypt from 'bcryptjs';
 
-const userSchema = new mongoose.Schema(
+export interface IUser extends Document {
+  _id: Types.ObjectId;
+  username: string;
+  email: string;
+  password?: string;
+  role: number; // 1 = Member, 2 = Moderator, 3 = SuperAdmin
+  isBanned: boolean;
+  isMuted: boolean;
+  mutedUntil: Date | null;
+  avatar: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  comparePassword(candidatePassword: string): Promise<boolean>;
+  isSuperAdmin(): boolean;
+  isModerator(): boolean;
+  checkMuteStatus(): boolean;
+}
+
+const userSchema = new Schema<IUser>(
   {
     username: {
       type: String,
@@ -52,43 +70,37 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for faster queries
-userSchema.index({ username: 1 });
-userSchema.index({ email: 1 });
-
 // Hash password before saving
-userSchema.pre('save', async function (next) {
-  try {
-    if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) return;
 
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
+  const salt = await bcrypt.genSalt(12);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 // Compare password method
-userSchema.methods.comparePassword = async function (candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
+  if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
 
 // Role helper methods
-userSchema.methods.isSuperAdmin = function () {
+userSchema.methods.isSuperAdmin = function (): boolean {
   return this.role === 3;
 };
 
-userSchema.methods.isModerator = function () {
+userSchema.methods.isModerator = function (): boolean {
   return this.role >= 2;
 };
 
-// Auto-check mute expiry
-userSchema.methods.checkMuteStatus = function () {
+// Auto-check mute expiry; returns true if status changed
+userSchema.methods.checkMuteStatus = function (): boolean {
   if (this.isMuted && this.mutedUntil && this.mutedUntil < new Date()) {
     this.isMuted = false;
     this.mutedUntil = null;
+    return true;
   }
+  return false;
 };
 
 // Remove password from JSON output
@@ -98,4 +110,5 @@ userSchema.methods.toJSON = function () {
   return obj;
 };
 
-module.exports = mongoose.model('User', userSchema);
+export const User: Model<IUser> = mongoose.model<IUser>('User', userSchema);
+export default User;

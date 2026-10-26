@@ -1,41 +1,65 @@
-const AuditLog = require('../models/AuditLog');
-const Room = require('../models/Room');
-const User = require('../models/User');
-const { ROLES } = require('../middleware/rbac');
-const { getUserSocketIds, removeUserFromRoom, getRoomOnlineUsers } = require('../socket/presence');
+import { Server, Socket } from 'socket.io';
+import AuditLog from '../models/AuditLog';
+import Room, { IRoom } from '../models/Room';
+import User, { IUser } from '../models/User';
+import { ROLES } from '../middleware/rbac';
+import { getUserSocketIds, removeUserFromRoom, getRoomOnlineUsers } from '../socket/presence';
+
+export interface CommandContext {
+  user: IUser;
+  room: IRoom;
+  io: Server;
+  socket: Socket;
+}
+
+export interface CommandResult {
+  broadcast: boolean;
+  message: string;
+}
 
 // ── Cooldown tracker ──
 // Map<`userId:command` -> lastUsedTimestamp>
-const cooldowns = new Map();
+const cooldowns = new Map<string, number>();
 const COOLDOWN_MS = 3000; // 3 seconds between same command
 
-const checkCooldown = (userId, command) => {
+const checkCooldown = (userId: string, command: string): number => {
   const key = `${userId}:${command}`;
   const now = Date.now();
   const lastUsed = cooldowns.get(key);
 
   if (lastUsed && now - lastUsed < COOLDOWN_MS) {
-    const remaining = Math.ceil((COOLDOWN_MS - (now - lastUsed)) / 1000);
-    return remaining;
+    return Math.ceil((COOLDOWN_MS - (now - lastUsed)) / 1000);
   }
 
   cooldowns.set(key, now);
   return 0;
 };
 
-const processCommand = async (content, context) => {
-  const { user, room, io, socket } = context;
+export const processCommand = async (
+  content: string,
+  context: CommandContext
+): Promise<CommandResult> => {
+  const { user, room, io } = context;
 
   // ── Stage 1: Parse ──
   const parts = content.trim().split(/\s+/);
   const command = parts[0].toLowerCase();
   const targetUsername = parts[1];
-  const restArgs = parts.slice(2).join(' ');
 
   // ── Stage 2: Lookup ──
   const KNOWN_COMMANDS = [
-    '/help', '/members', '/rooms', '/kick', '/mute', '/unmute',
-    '/ban', '/unban', '/announce', '/promote', '/demote', '/audit',
+    '/help',
+    '/members',
+    '/rooms',
+    '/kick',
+    '/mute',
+    '/unmute',
+    '/ban',
+    '/unban',
+    '/announce',
+    '/promote',
+    '/demote',
+    '/audit',
   ];
 
   if (!KNOWN_COMMANDS.includes(command)) {
@@ -73,20 +97,23 @@ const processCommand = async (content, context) => {
   }
 
   // ── Helpers ──
-  const findTargetUser = async () => {
+  const findTargetUser = async (): Promise<IUser | null> => {
     if (!targetUsername) return null;
     return User.findOne({ username: targetUsername });
   };
 
-  const isUserInRoom = (userId) => {
-    return room.members.some((id) => id.toString() === userId.toString());
+  const isUserInRoom = (userId: any): boolean => {
+    return room.members.some((id: any) => id.toString() === userId.toString());
   };
 
-  const isUserBannedInRoom = (userId) => {
-    return room.bannedUsers.some((id) => id.toString() === userId.toString());
+  const isUserBannedInRoom = (userId: any): boolean => {
+    return room.bannedUsers.some((id: any) => id.toString() === userId.toString());
   };
 
-  const requireTarget = async (cmd, usageHint) => {
+  const requireTarget = async (
+    cmd: string,
+    usageHint: string
+  ): Promise<{ error?: string; target?: IUser }> => {
     if (!targetUsername) {
       return { error: `Usage: ${cmd} ${usageHint}` };
     }
@@ -98,7 +125,9 @@ const processCommand = async (content, context) => {
       return { error: 'You cannot use this command on yourself.' };
     }
     if (target.role >= user.role) {
-      return { error: 'You cannot perform this action on a user with equal or higher privileges.' };
+      return {
+        error: 'You cannot perform this action on a user with equal or higher privileges.',
+      };
     }
     return { target };
   };
@@ -133,7 +162,7 @@ const processCommand = async (content, context) => {
   // /members
   if (command === '/members') {
     await room.populate('members', 'username role');
-    const memberNames = room.members.map((m) => m.username).join(', ');
+    const memberNames = (room.members as any[]).map((m: any) => m.username).join(', ');
     return { broadcast: false, message: `Room members: ${memberNames}` };
   }
 
@@ -143,12 +172,14 @@ const processCommand = async (content, context) => {
       $or: [{ isPrivate: false, roomType: { $ne: 'private' } }, { members: user._id }],
     }).select('name roomType members isArchived');
 
-    const roomList = rooms.map((r) => {
-      const memberCount = r.members.length;
-      const type = r.roomType || 'public';
-      const archived = r.isArchived ? ' [archived]' : '';
-      return `  ${r.name} (${type}, ${memberCount} members)${archived}`;
-    }).join('\n');
+    const roomList = rooms
+      .map((r) => {
+        const memberCount = r.members.length;
+        const type = r.roomType || 'public';
+        const archived = r.isArchived ? ' [archived]' : '';
+        return `  ${r.name} (${type}, ${memberCount} members)${archived}`;
+      })
+      .join('\n');
 
     return { broadcast: false, message: `Available rooms:\n${roomList}` };
   }
@@ -157,18 +188,14 @@ const processCommand = async (content, context) => {
   if (command === '/kick') {
     const result = await requireTarget('/kick', '<username>');
     if (result.error) return { broadcast: false, message: result.error };
-    const { target } = result;
+    const target = result.target!;
 
     if (!isUserInRoom(target._id)) {
       return { broadcast: false, message: 'Target user is not a member of this room.' };
     }
 
-    room.members = room.members.filter(
-      (id) => id.toString() !== target._id.toString()
-    );
-    room.moderators = room.moderators.filter(
-      (id) => id.toString() !== target._id.toString()
-    );
+    room.members = room.members.filter((id) => id.toString() !== target._id.toString());
+    room.moderators = room.moderators.filter((id) => id.toString() !== target._id.toString());
     await room.save();
 
     await AuditLog.create({
@@ -179,7 +206,6 @@ const processCommand = async (content, context) => {
       details: `${user.username} kicked ${target.username} from room ${room.name}`,
     });
 
-    // Remove kicked user from socket room and notify
     const targetSocketIds = getUserSocketIds(target._id.toString());
     for (const socketId of targetSocketIds) {
       const targetSocket = io.sockets.sockets.get(socketId);
@@ -216,7 +242,7 @@ const processCommand = async (content, context) => {
   if (command === '/mute') {
     const result = await requireTarget('/mute', '<username> [minutes]');
     if (result.error) return { broadcast: false, message: result.error };
-    const { target } = result;
+    const target = result.target!;
 
     if (!isUserInRoom(target._id)) {
       return { broadcast: false, message: 'Target user is not a member of this room.' };
@@ -263,7 +289,7 @@ const processCommand = async (content, context) => {
   if (command === '/unmute') {
     const result = await requireTarget('/unmute', '<username>');
     if (result.error) return { broadcast: false, message: result.error };
-    const { target } = result;
+    const target = result.target!;
 
     target.isMuted = false;
     target.mutedUntil = null;
@@ -287,7 +313,7 @@ const processCommand = async (content, context) => {
   if (command === '/ban') {
     const result = await requireTarget('/ban', '<username>');
     if (result.error) return { broadcast: false, message: result.error };
-    const { target } = result;
+    const target = result.target!;
 
     if (!isUserInRoom(target._id) && !isUserBannedInRoom(target._id)) {
       return { broadcast: false, message: 'Target user is not a member of this room.' };
@@ -297,12 +323,8 @@ const processCommand = async (content, context) => {
       room.bannedUsers.push(target._id);
     }
 
-    room.members = room.members.filter(
-      (id) => id.toString() !== target._id.toString()
-    );
-    room.moderators = room.moderators.filter(
-      (id) => id.toString() !== target._id.toString()
-    );
+    room.members = room.members.filter((id) => id.toString() !== target._id.toString());
+    room.moderators = room.moderators.filter((id) => id.toString() !== target._id.toString());
     await room.save();
 
     await AuditLog.create({
@@ -329,15 +351,13 @@ const processCommand = async (content, context) => {
   if (command === '/unban') {
     const result = await requireTarget('/unban', '<username>');
     if (result.error) return { broadcast: false, message: result.error };
-    const { target } = result;
+    const target = result.target!;
 
     if (!isUserBannedInRoom(target._id)) {
       return { broadcast: false, message: 'Target user is not banned in this room.' };
     }
 
-    room.bannedUsers = room.bannedUsers.filter(
-      (id) => id.toString() !== target._id.toString()
-    );
+    room.bannedUsers = room.bannedUsers.filter((id) => id.toString() !== target._id.toString());
     await room.save();
 
     await AuditLog.create({
@@ -411,7 +431,7 @@ const processCommand = async (content, context) => {
     target.role = Math.min(target.role + 1, ROLES.SUPERADMIN);
     await target.save();
 
-    const roleNames = { 1: 'Member', 2: 'Moderator', 3: 'SuperAdmin' };
+    const roleNames: Record<number, string> = { 1: 'Member', 2: 'Moderator', 3: 'SuperAdmin' };
 
     await AuditLog.create({
       action: 'USER_PROMOTED',
@@ -421,7 +441,6 @@ const processCommand = async (content, context) => {
       details: `${user.username} promoted ${target.username} from ${roleNames[oldRole]} to ${roleNames[target.role]}`,
     });
 
-    // Emit role change event to all of target user's sockets
     const targetSocketIds = getUserSocketIds(target._id.toString());
     targetSocketIds.forEach((socketId) => {
       io.to(socketId).emit('user:role_changed', {
@@ -453,7 +472,10 @@ const processCommand = async (content, context) => {
     }
 
     if (target.role >= user.role) {
-      return { broadcast: false, message: 'You cannot demote a user with equal or higher privileges.' };
+      return {
+        broadcast: false,
+        message: 'You cannot demote a user with equal or higher privileges.',
+      };
     }
 
     if (target.role <= ROLES.MEMBER) {
@@ -464,7 +486,7 @@ const processCommand = async (content, context) => {
     target.role = Math.max(target.role - 1, ROLES.MEMBER);
     await target.save();
 
-    const roleNames = { 1: 'Member', 2: 'Moderator', 3: 'SuperAdmin' };
+    const roleNames: Record<number, string> = { 1: 'Member', 2: 'Moderator', 3: 'SuperAdmin' };
 
     await AuditLog.create({
       action: 'USER_DEMOTED',
@@ -503,13 +525,15 @@ const processCommand = async (content, context) => {
       return { broadcast: false, message: 'No audit logs found.' };
     }
 
-    const logLines = logs.map((log) => {
-      const actor = log.performedBy?.username || 'Unknown';
-      const target = log.targetUser?.username ? ` → ${log.targetUser.username}` : '';
-      const roomName = log.room?.name ? ` in ${log.room.name}` : '';
-      const time = log.createdAt.toLocaleString();
-      return `  [${time}] ${log.action}: ${actor}${target}${roomName}`;
-    }).join('\n');
+    const logLines = logs
+      .map((log: any) => {
+        const actor = log.performedBy?.username || 'Unknown';
+        const target = log.targetUser?.username ? ` → ${log.targetUser.username}` : '';
+        const roomName = log.room?.name ? ` in ${log.room.name}` : '';
+        const time = log.createdAt.toLocaleString();
+        return `  [${time}] ${log.action}: ${actor}${target}${roomName}`;
+      })
+      .join('\n');
 
     return { broadcast: false, message: `Recent audit logs:\n${logLines}` };
   }
@@ -520,4 +544,4 @@ const processCommand = async (content, context) => {
   };
 };
 
-module.exports = { processCommand };
+export default { processCommand };

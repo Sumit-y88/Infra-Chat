@@ -1,18 +1,25 @@
-const express = require('express');
-const Message = require('../models/Message');
-const Room = require('../models/Room');
-const AuditLog = require('../models/AuditLog');
-const auth = require('../middleware/auth');
-const { ROLES } = require('../middleware/rbac');
+import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
+import Message from '../models/Message';
+import Room from '../models/Room';
+import AuditLog from '../models/AuditLog';
+import auth from '../middleware/auth';
+import { ROLES } from '../middleware/rbac';
+import { getIO } from '../socket';
+import { deleteFileStorage } from '../config/cloudinary';
 
-const router = express.Router();
+const router = Router();
 
-const isSameId = (a, b) => a.toString() === b.toString();
+const isSameId = (a: any, b: any): boolean => a.toString() === b.toString();
 
 // GET /api/rooms/:id/messages
-router.get('/:id/messages', auth, async (req, res) => {
+router.get('/:id/messages', auth, async (req: Request, res: Response) => {
   try {
-    let { page = 1, limit = 50 } = req.query;
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid room ID format.' });
+    }
+
+    let { page = 1, limit = 50 } = req.query as any;
 
     page = parseInt(page, 10);
     limit = parseInt(limit, 10);
@@ -27,10 +34,11 @@ router.get('/:id/messages', auth, async (req, res) => {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
-    const isMember = room.members.some((memberId) => isSameId(memberId, req.user._id));
-    const isSuperAdmin = req.user.role >= ROLES.SUPERADMIN;
+    const currentUser = req.user!;
+    const isMember = room.members.some((memberId: any) => isSameId(memberId, currentUser._id));
+    const isSuperAdmin = currentUser.role >= ROLES.SUPERADMIN;
 
-    if (room.isBanned(req.user._id) && !isSuperAdmin) {
+    if (room.isBanned(currentUser._id) && !isSuperAdmin) {
       return res.status(403).json({ message: 'You are banned from this room.' });
     }
 
@@ -40,13 +48,15 @@ router.get('/:id/messages', auth, async (req, res) => {
 
     const query = { room: req.params.id };
 
-    const messages = await Message.find(query)
-      .populate('sender', 'username role avatar')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    const total = await Message.countDocuments(query);
+    const [messages, total] = await Promise.all([
+      Message.find(query)
+        .populate('sender', 'username role avatar')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Message.countDocuments(query),
+    ]);
 
     return res.json({
       room: {
@@ -65,15 +75,19 @@ router.get('/:id/messages', auth, async (req, res) => {
         hasPrevPage: page > 1,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get Messages Error:', error.message);
     return res.status(500).json({ message: 'Server error while fetching messages.' });
   }
 });
 
 // PATCH /api/rooms/messages/:messageId
-router.patch('/messages/:messageId', auth, async (req, res) => {
+router.patch('/messages/:messageId', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.messageId)) {
+      return res.status(400).json({ message: 'Invalid message ID format.' });
+    }
+
     const { content } = req.body;
 
     if (!content || !content.trim()) {
@@ -85,7 +99,9 @@ router.patch('/messages/:messageId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Message not found.' });
     }
 
-    if (!isSameId(message.sender, req.user._id)) {
+    const currentUser = req.user!;
+
+    if (!isSameId(message.sender, currentUser._id)) {
       return res.status(403).json({ message: 'You can edit only your own messages.' });
     }
 
@@ -97,19 +113,32 @@ router.patch('/messages/:messageId', auth, async (req, res) => {
     await message.save();
     await message.populate('sender', 'username role avatar');
 
+    const io = getIO();
+    if (io) {
+      io.to(message.room.toString()).emit('message:updated', {
+        messageId: message._id.toString(),
+        roomId: message.room.toString(),
+        updatedMessage: message,
+      });
+    }
+
     return res.json({
       message: 'Message updated successfully.',
       updatedMessage: message,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Edit Message Error:', error.message);
     return res.status(500).json({ message: 'Server error while editing message.' });
   }
 });
 
 // DELETE /api/rooms/messages/:messageId
-router.delete('/messages/:messageId', auth, async (req, res) => {
+router.delete('/messages/:messageId', auth, async (req: Request, res: Response) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.messageId)) {
+      return res.status(400).json({ message: 'Invalid message ID format.' });
+    }
+
     const message = await Message.findById(req.params.messageId).populate('room');
     if (!message) {
       return res.status(404).json({ message: 'Message not found.' });
@@ -120,9 +149,10 @@ router.delete('/messages/:messageId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Room not found.' });
     }
 
-    const canDeleteOwn = isSameId(message.sender, req.user._id);
+    const currentUser = req.user!;
+    const canDeleteOwn = isSameId(message.sender, currentUser._id);
     const canModerate =
-      room.isRoomModerator(req.user._id) || req.user.role >= ROLES.SUPERADMIN;
+      room.isRoomModerator(currentUser._id) || currentUser.role >= ROLES.SUPERADMIN;
 
     if (!canDeleteOwn && !canModerate) {
       return res.status(403).json({
@@ -130,15 +160,22 @@ router.delete('/messages/:messageId', auth, async (req, res) => {
       });
     }
 
+    // Delete attached files from Cloudinary and/or local storage
+    if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+      for (const att of message.attachments) {
+        await deleteFileStorage(att);
+      }
+    }
+
     message.softDelete();
     await message.save();
 
     await AuditLog.create({
       action: 'MESSAGE_DELETED',
-      performedBy: req.user._id,
+      performedBy: currentUser._id,
       room: room._id,
       targetUser: message.sender,
-      details: `${req.user.username} deleted a message in room ${room.name}`,
+      details: `${currentUser.username} deleted a message in room ${room.name}`,
       metadata: {
         messageId: message._id.toString(),
       },
@@ -146,14 +183,23 @@ router.delete('/messages/:messageId', auth, async (req, res) => {
 
     await message.populate('sender', 'username role avatar');
 
+    const io = getIO();
+    if (io) {
+      io.to(room._id.toString()).emit('message:deleted', {
+        messageId: message._id.toString(),
+        roomId: room._id.toString(),
+        deletedMessage: message,
+      });
+    }
+
     return res.json({
       message: 'Message deleted successfully.',
       deletedMessage: message,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Delete Message Error:', error.message);
     return res.status(500).json({ message: 'Server error while deleting message.' });
   }
 });
 
-module.exports = router;
+export default router;

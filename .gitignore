@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Build outputs
+dist/
+build/
+
+# Uploads / storage
+uploads/
+server/uploads/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent internal files
+.agents/
+skills-lock.json

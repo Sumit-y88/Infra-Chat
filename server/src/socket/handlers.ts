@@ -1,55 +1,60 @@
-const Message = require('../models/Message');
-const Room = require('../models/Room');
-const User = require('../models/User');
-const DirectMessage = require('../models/DirectMessage');
-const { getUserSocketIds, touchUserActivity } = require('./presence');
-
-const {
+import { Server, Socket } from 'socket.io';
+import mongoose from 'mongoose';
+import Message from '../models/Message';
+import Room from '../models/Room';
+import User, { IUser } from '../models/User';
+import DirectMessage from '../models/DirectMessage';
+import {
   addUserToRoom,
   removeUserFromRoom,
   removeUserFromAllRooms,
   getRoomOnlineUsers,
-} = require('./presence');
-const { processCommand } = require('../commands/pipeline');
-const { ROLES } = require('../middleware/rbac');
+  getUserSocketIds,
+  touchUserActivity,
+} from './presence';
+import { processCommand } from '../commands/pipeline';
+import { ROLES } from '../middleware/rbac';
 
-const isSameId = (a, b) => a.toString() === b.toString();
+export interface AuthenticatedSocket extends Socket {
+  user: IUser;
+}
 
-const registerHandlers = (io, socket) => {
+export const registerHandlers = (io: Server, socket: AuthenticatedSocket): void => {
   const user = socket.user;
 
-  const emitSocketError = (message) => {
+  const emitSocketError = (message: string): void => {
     socket.emit('socket:error', { message });
   };
 
-
   // ── Silent Room Subscribe (for unread notifications) ──
-socket.on('room:subscribe', async (roomIds = []) => {
-  try {
-    if (!Array.isArray(roomIds)) return;
+  // Optimized: Single batch query instead of N individual roundtrips
+  socket.on('room:subscribe', async (roomIds: string[] = []) => {
+    try {
+      if (!Array.isArray(roomIds) || roomIds.length === 0) return;
 
-    for (const roomId of roomIds) {
-      const room = await Room.findById(roomId);
-      if (!room) continue;
+      const validIds = roomIds.filter((id) => mongoose.isValidObjectId(id));
+      if (validIds.length === 0) return;
 
+      const rooms = await Room.find({ _id: { $in: validIds } });
       const isSuperAdmin = user.role >= ROLES.SUPERADMIN;
-      const isMember = room.isMember(user._id);
 
-      if (!isMember && !isSuperAdmin) continue;
-      if (room.isBanned(user._id) && !isSuperAdmin) continue;
+      for (const room of rooms) {
+        const isMember = room.isMember(user._id);
+        if (!isMember && !isSuperAdmin) continue;
+        if (room.isBanned(user._id) && !isSuperAdmin) continue;
 
-      socket.join(roomId);
+        socket.join(room._id.toString());
+      }
+    } catch (err: any) {
+      console.error('room:subscribe error:', err.message);
     }
-  } catch (err) {
-    console.error('room:subscribe error:', err.message);
-  }
-});
+  });
 
   // ── Room Join ──
-  socket.on('room:join', async (roomId) => {
+  socket.on('room:join', async (roomId: string) => {
     try {
-      if (!roomId) {
-        return emitSocketError('Room ID is required.');
+      if (!roomId || !mongoose.isValidObjectId(roomId)) {
+        return emitSocketError('Valid Room ID is required.');
       }
 
       const room = await Room.findById(roomId);
@@ -59,18 +64,17 @@ socket.on('room:subscribe', async (roomIds = []) => {
 
       const isSuperAdmin = user.role >= ROLES.SUPERADMIN;
 
-      if (room.isBanned(reqSafeUserId(user)) && !isSuperAdmin) {
+      if (room.isBanned(user._id) && !isSuperAdmin) {
         return emitSocketError('You are banned from this room.');
       }
 
-      // Private rooms should not be freely joinable unless already a member or superadmin
-      const alreadyMember = room.isMember(reqSafeUserId(user));
+      const alreadyMember = room.isMember(user._id);
       if (room.isPrivate && !alreadyMember && !isSuperAdmin) {
         return emitSocketError('This is a private room. You cannot join directly.');
       }
 
       if (!alreadyMember) {
-        room.addMember(reqSafeUserId(user));
+        room.addMember(user._id);
         await room.save();
       }
 
@@ -102,17 +106,17 @@ socket.on('room:subscribe', async (roomIds = []) => {
 
       await sysMsg.populate('sender', 'username role avatar');
       io.to(roomId).emit('message:new', sysMsg);
-    } catch (err) {
+    } catch (err: any) {
       console.error('room:join error:', err.message);
       emitSocketError('Failed to join room.');
     }
   });
 
   // ── Room Leave ──
-  socket.on('room:leave', async (roomId) => {
+  socket.on('room:leave', async (roomId: string) => {
     try {
-      if (!roomId) {
-        return emitSocketError('Room ID is required.');
+      if (!roomId || !mongoose.isValidObjectId(roomId)) {
+        return emitSocketError('Valid Room ID is required.');
       }
 
       const room = await Room.findById(roomId);
@@ -121,7 +125,7 @@ socket.on('room:subscribe', async (roomIds = []) => {
       }
 
       socket.leave(roomId);
-      removeUserFromRoom(roomId, user._id.toString());
+      removeUserFromRoom(roomId, user._id.toString(), socket.id);
 
       io.to(roomId).emit('room:onlineUsers', {
         roomId,
@@ -133,76 +137,75 @@ socket.on('room:subscribe', async (roomIds = []) => {
         username: user.username,
         roomId,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('room:leave error:', err.message);
       emitSocketError('Failed to leave room.');
     }
   });
 
   // ── Direct Message Send ──
-socket.on('dm:send', async ({ recipientId, content, attachments }) => {
-  try {
-    if (!recipientId) {
-      return emitSocketError('Recipient ID is required.');
+  socket.on('dm:send', async ({ recipientId, content, attachments }: any) => {
+    try {
+      if (!recipientId || !mongoose.isValidObjectId(recipientId)) {
+        return emitSocketError('Valid recipient ID is required.');
+      }
+
+      const trimmedContent = content ? content.trim() : '';
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+
+      if (!trimmedContent && !hasAttachments) {
+        return emitSocketError('Message content is required.');
+      }
+
+      const recipient = await User.findById(recipientId);
+      if (!recipient) {
+        return emitSocketError('Recipient not found.');
+      }
+
+      if (recipient.isBanned) {
+        return emitSocketError('Cannot send message to this user.');
+      }
+
+      if (recipient._id.toString() === user._id.toString()) {
+        return emitSocketError('You cannot message yourself.');
+      }
+
+      const dmData: Record<string, any> = {
+        content: trimmedContent,
+        sender: user._id,
+        recipient: recipient._id,
+      };
+
+      if (hasAttachments) {
+        dmData.attachments = attachments;
+      }
+
+      const directMessage = await DirectMessage.create(dmData);
+
+      await directMessage.populate('sender', 'username role avatar');
+      await directMessage.populate('recipient', 'username role avatar');
+
+      // sender gets copy
+      socket.emit('dm:new', directMessage);
+
+      // recipient gets copy on all active sockets
+      const recipientSocketIds = getUserSocketIds(recipient._id.toString());
+      recipientSocketIds.forEach((socketId) => {
+        io.to(socketId).emit('dm:new', directMessage);
+      });
+    } catch (err: any) {
+      console.error('dm:send error:', err.message);
+      emitSocketError('Failed to send direct message.');
     }
-
-    const trimmedContent = content ? content.trim() : '';
-    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
-
-    if (!trimmedContent && !hasAttachments) {
-      return emitSocketError('Message content is required.');
-    }
-
-    const recipient = await User.findById(recipientId);
-    if (!recipient) {
-      return emitSocketError('Recipient not found.');
-    }
-
-    if (recipient.isBanned) {
-      return emitSocketError('Cannot send message to this user.');
-    }
-
-    if (recipient._id.toString() === user._id.toString()) {
-      return emitSocketError('You cannot message yourself.');
-    }
-
-    const dmData = {
-      content: trimmedContent,
-      sender: user._id,
-      recipient: recipient._id,
-    };
-
-    if (hasAttachments) {
-      dmData.attachments = attachments;
-    }
-
-    const directMessage = await DirectMessage.create(dmData);
-
-    await directMessage.populate('sender', 'username role avatar');
-    await directMessage.populate('recipient', 'username role avatar');
-
-    // sender gets copy
-    socket.emit('dm:new', directMessage);
-
-    // recipient gets copy on all active sockets
-    const recipientSocketIds = getUserSocketIds(recipient._id.toString());
-    recipientSocketIds.forEach((socketId) => {
-      io.to(socketId).emit('dm:new', directMessage);
-    });
-  } catch (err) {
-    console.error('dm:send error:', err.message);
-    emitSocketError('Failed to send direct message.');
-  }
-});
-
+  });
 
   // ── Message Send ──
-  socket.on('message:send', async ({ roomId, content, attachments }) => {
+  socket.on('message:send', async ({ roomId, content, attachments }: any) => {
     try {
       touchUserActivity(user._id.toString());
 
-      if (!roomId) {
-        return emitSocketError('Room ID is required.');
+      if (!roomId || !mongoose.isValidObjectId(roomId)) {
+        return emitSocketError('Valid Room ID is required.');
       }
 
       const trimmedContent = content ? content.trim() : '';
@@ -212,12 +215,15 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         return;
       }
 
-      const room = await Room.findById(roomId);
+      const [room, freshUser] = await Promise.all([
+        Room.findById(roomId),
+        User.findById(user._id),
+      ]);
+
       if (!room) {
         return emitSocketError('Room not found.');
       }
 
-      const freshUser = await User.findById(user._id);
       if (!freshUser) {
         return emitSocketError('User not found.');
       }
@@ -233,19 +239,16 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         return emitSocketError('You are not a member of this room.');
       }
 
-      // Check if room is archived (read-only)
       if (room.isArchived) {
         return emitSocketError('This room is archived and read-only.');
       }
 
-      // Check broadcast room restriction (only Moderator+ can send)
       if (room.roomType === 'broadcast' && freshUser.role < ROLES.MODERATOR) {
         return emitSocketError('Only moderators and admins can send messages in broadcast rooms.');
       }
 
-      // Check mute
-      freshUser.checkMuteStatus?.();
-      if (freshUser.isModified && freshUser.isModified('isMuted')) {
+      // Check mute expiry and persist if changed
+      if (freshUser.checkMuteStatus()) {
         await freshUser.save();
       }
 
@@ -258,7 +261,7 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         return emitSocketError('You are muted.');
       }
 
-      // Check for command (only text commands, not file attachments)
+      // Check for command (text commands without attachments)
       if (trimmedContent.startsWith('/') && !hasAttachments) {
         const result = await processCommand(trimmedContent, {
           user: freshUser,
@@ -287,7 +290,7 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         return;
       }
 
-      const messageData = {
+      const messageData: Record<string, any> = {
         content: trimmedContent,
         sender: user._id,
         room: roomId,
@@ -302,18 +305,18 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
 
       await message.populate('sender', 'username role avatar');
       io.to(roomId).emit('message:new', message);
-    } catch (err) {
+    } catch (err: any) {
       console.error('message:send error:', err.message);
       emitSocketError('Failed to send message.');
     }
   });
 
   // ── Typing Indicators ──
-  socket.on('typing:start', async ({ roomId }) => {
+  socket.on('typing:start', async ({ roomId }: { roomId: string }) => {
     try {
       touchUserActivity(user._id.toString());
 
-      if (!roomId) return;
+      if (!roomId || !mongoose.isValidObjectId(roomId)) return;
 
       const room = await Room.findById(roomId);
       if (!room) return;
@@ -325,14 +328,14 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         username: user.username,
         isTyping: true,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('typing:start error:', err.message);
     }
   });
 
-  socket.on('typing:stop', async ({ roomId }) => {
+  socket.on('typing:stop', async ({ roomId }: { roomId: string }) => {
     try {
-      if (!roomId) return;
+      if (!roomId || !mongoose.isValidObjectId(roomId)) return;
 
       const room = await Room.findById(roomId);
       if (!room) return;
@@ -344,7 +347,7 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
         username: user.username,
         isTyping: false,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('typing:stop error:', err.message);
     }
   });
@@ -371,12 +374,10 @@ socket.on('dm:send', async ({ recipientId, content, attachments }) => {
           users: getRoomOnlineUsers(roomId),
         });
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('disconnect error:', err.message);
     }
   });
 };
 
-const reqSafeUserId = (user) => user._id;
-
-module.exports = { registerHandlers };
+export default { registerHandlers };

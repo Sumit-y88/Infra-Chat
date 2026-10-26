@@ -69,7 +69,7 @@ Parse → Lookup → Permission → Context → Cooldown → Execute
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | React 19, Vite 8, React Router 7, Socket.io Client |
-| **Backend** | Node.js, Express 4, Socket.io 4 |
+| **Backend** | Node.js, TypeScript 5+, Express 4, Socket.io 4 |
 | **Database** | MongoDB with Mongoose 8 |
 | **Auth** | JWT (jsonwebtoken) + bcryptjs |
 | **File Upload** | Multer (disk storage) |
@@ -81,33 +81,37 @@ Parse → Lookup → Permission → Context → Cooldown → Execute
 
 ```
 hack/
-├── server/                        # Backend API + Socket server
-│   ├── server.js                  # Entry point
-│   ├── config/db.js               # MongoDB connection
-│   ├── models/
-│   │   ├── User.js                # User with roles & mute/ban
-│   │   ├── Room.js                # Chat rooms with members
-│   │   ├── Message.js             # Room messages + attachments
-│   │   ├── DirectMessage.js       # DM messages
-│   │   └── AuditLog.js            # Append-only audit trail
-│   ├── middleware/
-│   │   ├── auth.js                # JWT verification
-│   │   ├── rbac.js                # Role permission checks
-│   │   └── upload.js              # Multer file upload config
-│   ├── routes/
-│   │   ├── auth.js                # Register, login, profile
-│   │   ├── rooms.js               # Room CRUD, join/leave
-│   │   ├── messages.js            # Message history
-│   │   ├── directMessages.js      # DM endpoints
-│   │   ├── users.js               # User management
-│   │   ├── audit.js               # Audit log viewer
-│   │   └── upload.js              # File upload endpoint
-│   ├── socket/
-│   │   ├── index.js               # Socket.io init + JWT auth
-│   │   ├── handlers.js            # Event handlers
-│   │   └── presence.js            # Online user tracking
-│   └── commands/
-│       └── pipeline.js            # 6-stage command processor
+├── server/                        # Backend API + Socket server (TypeScript)
+│   ├── tsconfig.json              # TypeScript configuration
+│   ├── src/
+│   │   ├── server.ts              # Entry point
+│   │   ├── config/db.ts           # MongoDB connection
+│   │   ├── models/
+│   │   │   ├── User.ts            # User with roles & mute/ban
+│   │   │   ├── Room.ts            # Chat rooms with members
+│   │   │   ├── Message.ts         # Room messages + attachments
+│   │   │   ├── DirectMessage.ts   # DM messages
+│   │   │   └── AuditLog.ts        # Append-only audit trail
+│   │   ├── middleware/
+│   │   │   ├── auth.ts            # JWT verification & mute sync
+│   │   │   ├── rbac.ts            # Role permission checks
+│   │   │   └── upload.ts          # Multer file upload config
+│   │   ├── routes/
+│   │   │   ├── auth.ts            # Register, login, profile
+│   │   │   ├── rooms.ts           # Room CRUD, join/leave
+│   │   │   ├── messages.ts        # Message history
+│   │   │   ├── directMessages.ts  # DM endpoints
+│   │   │   ├── directMessageActions.ts # DM edit & soft delete
+│   │   │   ├── users.ts           # User management
+│   │   │   ├── audit.ts           # Audit log viewer
+│   │   │   └── upload.ts          # File upload endpoint
+│   │   ├── socket/
+│   │   │   ├── index.ts           # Socket.io init + JWT auth
+│   │   │   ├── handlers.ts        # Event handlers
+│   │   │   └── presence.ts        # Online user tracking
+│   │   └── commands/
+│   │       └── pipeline.ts        # 6-stage command processor
+│   └── uploads/                   # Uploaded media assets
 │
 └── frontend/                      # React SPA
     └── src/

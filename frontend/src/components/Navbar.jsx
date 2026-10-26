@@ -1,24 +1,24 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { getRoleName } from "../utils/roles";
 
-function SunIcon() {
+function ThemeIcon({ theme }) {
+  if (theme === "dark") {
+    // Sun icon for switching to light
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" /><path d="M12 20v2" />
+        <path d="M4.93 4.93l1.41 1.41" /><path d="M17.66 17.66l1.41 1.41" />
+        <path d="M2 12h2" /><path d="M20 12h2" />
+        <path d="M6.34 17.66l-1.41 1.41" /><path d="M19.07 4.93l-1.41 1.41" />
+      </svg>
+    );
+  }
+  // Moon icon for switching to dark
   return (
-    <svg className="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2.5" /><path d="M12 19.5V22" />
-      <path d="M4.93 4.93l1.77 1.77" /><path d="M17.3 17.3l1.77 1.77" />
-      <path d="M2 12h2.5" /><path d="M19.5 12H22" />
-      <path d="M4.93 19.07l1.77-1.77" /><path d="M17.3 6.7l1.77-1.77" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg className="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   );
 }
@@ -27,107 +27,116 @@ function Navbar() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
-  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+  };
 
-  const isHome = location.pathname === "/";
-  const initial = user?.username?.charAt(0)?.toUpperCase() || "?";
+  // Do not render top navbar on the workspace (controls moved to rail footer)
+  if (
+    location.pathname === "/workspace" ||
+    location.pathname.startsWith("/rooms") ||
+    location.pathname.startsWith("/dm")
+  ) {
+    return null;
+  }
 
-  return (
-    <nav className={`navbar ${scrolled ? "navbar--scrolled" : ""} ${isHome ? "navbar--home" : ""}`}>
-      <div className="nav-left">
-        <button
-          className="mobile-menu-btn"
-          onClick={() => window.dispatchEvent(new CustomEvent("toggle-sidebar"))}
-          aria-label="Toggle menu"
-          title="Menu"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="15" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
+  const isSlimPage =
+    location.pathname === "/admin" ||
+    location.pathname === "/audit" ||
+    location.pathname === "/dashboard";
 
-        <Link to={user ? "/workspace" : "/"} className="nav-brand">
-          <span className="nav-brand__icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </span>
-          <span className="nav-brand__text">InfraChat</span>
-        </Link>
+  if (isSlimPage) {
+    let pageTitle = "Dashboard";
+    if (location.pathname === "/admin") pageTitle = "Admin panel";
+    if (location.pathname === "/audit") pageTitle = "Audit log";
 
-        {/* Nav links for home page */}
-        {isHome && !user && (
-          <div className="nav-links nav-desktop-only">
-            <a href="#features" className="nav-link">Features</a>
-            <a href="#steps" className="nav-link">How it works</a>
-          </div>
-        )}
-      </div>
-
-      <div className="nav-right">
-        <button
-          className="nav-icon-btn theme-toggle"
-          onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-          aria-label="Toggle theme"
-          title="Toggle theme"
-        >
-          {theme === "light" ? <MoonIcon /> : <SunIcon />}
-        </button>
-
-        {user?.role >= 2 && (
-          <Link to="/audit" className="nav-link-btn nav-desktop-only">
+    return (
+      <header className="slim-header" role="banner">
+        <div className="slim-header__left">
+          <Link to="/workspace" className="slim-header__back" aria-label="Back to workspace">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
             </svg>
-            Audit
+            <span>Back to workspace</span>
           </Link>
-        )}
+          <span className="slim-header__divider">/</span>
+          <span className="slim-header__title">{pageTitle}</span>
+        </div>
 
-        {user?.role === 3 && (
-          <Link to="/admin" className="nav-link-btn nav-link-btn--accent nav-desktop-only">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            Admin
-          </Link>
-        )}
-
-        {user ? (
-          <div className="nav-user-section">
-            <div className="nav-avatar" title={`${user.username} (${getRoleName(user.role)})`}>
-              {initial}
-            </div>
-            <button onClick={logout} className="nav-icon-btn nav-logout-btn" title="Logout">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="slim-header__right">
+          <button
+            className="icon-btn"
+            onClick={toggleTheme}
+            aria-label="Switch theme"
+            title="Switch theme"
+          >
+            <ThemeIcon theme={theme} />
+          </button>
+          {user && (
+            <button
+              className="icon-btn"
+              onClick={logout}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
             </button>
+          )}
+        </div>
+      </header>
+    );
+  }
+
+  return (
+    <header className="public-header" role="banner">
+      <div className="public-header__left">
+        <Link to="/" className="brand-mark-link" aria-label="Internal Network Home">
+          <div className="brand-mark" aria-hidden="true">
+            <span className="brand-mark__bar" style={{ height: "6px" }} />
+            <span className="brand-mark__bar" style={{ height: "10px" }} />
+            <span className="brand-mark__bar" style={{ height: "14px" }} />
           </div>
+          <span className="brand-text">Internal Network</span>
+        </Link>
+      </div>
+
+      <div className="public-header__right">
+        <button
+          className="icon-btn"
+          onClick={toggleTheme}
+          aria-label="Switch theme"
+          title="Switch theme"
+        >
+          <ThemeIcon theme={theme} />
+        </button>
+
+        {user ? (
+          <Link to="/workspace" className="btn-quiet">
+            Open workspace
+          </Link>
         ) : (
-          <div className="nav-auth-btns nav-desktop-only">
-            <Link to="/login" className="nav-link-btn">Sign in</Link>
-            <Link to="/register" className="nav-link-btn nav-link-btn--accent">Get Started</Link>
+          <div className="public-header__auth">
+            <Link to="/login" className="btn-quiet">
+              Sign in
+            </Link>
+            <Link to="/register" className="btn-accent">
+              Create account
+            </Link>
           </div>
         )}
       </div>
-    </nav>
+    </header>
   );
 }
 

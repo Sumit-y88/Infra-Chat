@@ -1,19 +1,19 @@
-const express = require('express');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const auth = require('../middleware/auth');
+import { Router, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import User, { IUser } from '../models/User';
+import auth from '../middleware/auth';
 
-const router = express.Router();
+const router = Router();
 
-const generateToken = (user) => {
-  return jwt.sign(
-    { id: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
-  );
+const generateToken = (user: IUser): string => {
+  const secret = process.env.JWT_SECRET || 'fallback_secret';
+  const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
+  return jwt.sign({ id: user._id, role: user.role }, secret, {
+    expiresIn,
+  } as jwt.SignOptions);
 };
 
-const formatUserResponse = (user) => {
+const formatUserResponse = (user: IUser) => {
   return {
     id: user._id,
     username: user.username,
@@ -29,11 +29,10 @@ const formatUserResponse = (user) => {
 };
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
     let { username, email, password } = req.body;
 
-    // Basic validation
     if (!username || !email || !password) {
       return res.status(400).json({
         message: 'Username, email, and password are required.',
@@ -82,7 +81,6 @@ router.post('/register', async (req, res) => {
       role,
     });
 
-    // Generate token
     const token = generateToken(user);
 
     return res.status(201).json({
@@ -90,11 +88,11 @@ router.post('/register', async (req, res) => {
       token,
       user: formatUserResponse(user),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Register Error:', error.message);
 
     if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map((e) => e.message);
+      const messages = Object.values(error.errors).map((e: any) => e.message);
       return res.status(400).json({
         message: messages.join(', '),
       });
@@ -107,7 +105,7 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response) => {
   try {
     let { email, password } = req.body;
 
@@ -135,10 +133,11 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Auto-check mute expiry
-    user.checkMuteStatus?.();
+    // Auto-check mute expiry and persist if updated
+    if (user.checkMuteStatus()) {
+      await user.save();
+    }
 
-    // Check password
     const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
@@ -147,7 +146,6 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Generate token
     const token = generateToken(user);
 
     return res.json({
@@ -155,7 +153,7 @@ router.post('/login', async (req, res) => {
       token,
       user: formatUserResponse(user),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login Error:', error.message);
     return res.status(500).json({
       message: 'Server error during login.',
@@ -164,12 +162,16 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', auth, async (req, res) => {
+router.get('/me', auth, async (req: Request, res: Response) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'User not authenticated.' });
+    }
+
     return res.json({
       user: formatUserResponse(req.user),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get Me Error:', error.message);
     return res.status(500).json({
       message: 'Server error while fetching user profile.',
@@ -177,4 +179,4 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
