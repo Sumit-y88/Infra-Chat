@@ -439,7 +439,7 @@ function ChatPanel({
                     </div>
                   ) : (
                     <div
-                      className={`msg-row ${mine ? "msg-row--mine" : ""} ${
+                      className={`msg-row ${mine ? "msg-row--mine" : "msg-row--other"} ${
                         isGrouped ? "msg-row--grouped" : ""
                       }`}
                       tabIndex={0}
@@ -454,76 +454,125 @@ function ChatPanel({
                       <div className="msg-row__content">
                         {!isGrouped && (
                           <div className="msg-row__header">
-                            <span className="msg-row__name">{senderName}</span>
-                            <RoleGlyph level={senderRole} />
+                            <span className="msg-row__name">{mine ? "You" : senderName}</span>
+                            {!mine && <RoleGlyph level={senderRole} />}
                             <span className="msg-row__time">
                               {formatMessageTime(msg.createdAt)}
                             </span>
                             {msg.edited && (
                               <span className="msg-row__edited">edited</span>
                             )}
-
-                            {mine && !msg.deletedForEveryone && !isEditing && (
-                              <div className="msg-row__hover-actions">
-                                <button
-                                  className="text-btn"
-                                  onClick={() => startEdit(msg)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className="text-btn text-btn--danger"
-                                  onClick={() => deleteMessage(msg._id)}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
                           </div>
                         )}
 
-                        {isEditing ? (
-                          <div className="msg-row__edit-box">
-                            <input
-                              type="text"
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") saveEdit();
-                                if (e.key === "Escape") cancelEdit();
-                              }}
-                              autoFocus
-                            />
-                            <div className="msg-row__edit-actions">
-                              <button className="btn-accent btn-sm" onClick={saveEdit}>
-                                Save
+                        <div className="msg-row__bubble-wrap">
+                          {mine && !msg.deletedForEveryone && !isEditing && (
+                            <div className="msg-row__hover-actions">
+                              <button
+                                className="action-pill-btn"
+                                onClick={() => startEdit(msg)}
+                                title="Edit message"
+                                aria-label="Edit message"
+                              >
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                                <span>Edit</span>
                               </button>
-                              <button className="btn-quiet btn-sm" onClick={cancelEdit}>
-                                Cancel
+                              <button
+                                className="action-pill-btn action-pill-btn--danger"
+                                onClick={() => deleteMessage(msg._id)}
+                                title="Delete message"
+                                aria-label="Delete message"
+                              >
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                                <span>Delete</span>
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <>
-                            {msg.content && (
-                              <div
-                                className={`msg-row__body ${
-                                  msg.deletedForEveryone ? "msg-row__body--deleted" : ""
-                                }`}
-                              >
-                                {msg.content}
-                              </div>
-                            )}
+                          )}
 
-                            {!msg.deletedForEveryone &&
-                              msg.attachments &&
-                              msg.attachments.length > 0 && (
-                                <div className="msg-row__attachments">
-                                  {msg.attachments.map(renderAttachment)}
+                          {isEditing ? (
+                            <div className="msg-row__edit-box">
+                              <textarea
+                                className="msg-row__edit-textarea"
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    saveEdit();
+                                  }
+                                  if (e.key === "Escape") cancelEdit();
+                                }}
+                                autoFocus
+                                rows={2}
+                              />
+                              <div className="msg-row__edit-actions">
+                                <button className="btn-accent btn-sm edit-save-btn" onClick={saveEdit}>
+                                  <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                  Save
+                                </button>
+                                <button className="btn-quiet btn-sm edit-cancel-btn" onClick={cancelEdit}>
+                                  Cancel
+                                </button>
+                                <span className="edit-hint">Enter to save • Esc to cancel</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className={`msg-bubble ${msg.deletedForEveryone ? "msg-bubble--deleted" : ""}`}>
+                              {msg.content && (
+                                <div
+                                  className={`msg-row__body ${
+                                    msg.deletedForEveryone ? "msg-row__body--deleted" : ""
+                                  }`}
+                                >
+                                  {msg.content}
                                 </div>
                               )}
-                          </>
-                        )}
+
+                              {!msg.deletedForEveryone &&
+                                msg.attachments &&
+                                msg.attachments.length > 0 && (
+                                  <div className="msg-row__attachments">
+                                    {msg.attachments.map(renderAttachment)}
+                                  </div>
+                                )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
