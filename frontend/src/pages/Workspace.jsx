@@ -33,8 +33,20 @@ function Workspace() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showInfo, setShowInfo] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      const isMobile = window.innerWidth <= 768;
+      const hasRouteChat = Boolean(routeRoomId || routeUserId);
+      return isMobile && !hasRouteChat;
+    }
+    return false;
+  });
+  const [showInfo, setShowInfo] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth > 1080;
+    }
+    return false;
+  });
 
   // Listen for mobile menu toggle from Navbar
   useEffect(() => {
@@ -576,6 +588,14 @@ const refreshRooms = async () => {
       <div
         className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
         onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* Mobile info panel overlay */}
+      <div
+        className={`panel-overlay ${showInfo ? 'visible' : ''}`}
+        onClick={() => setShowInfo(false)}
+        aria-hidden="true"
       />
 
       <Sidebar
@@ -617,7 +637,7 @@ const refreshRooms = async () => {
         onToggleInfo={() => setShowInfo((prev) => !prev)}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         availableRooms={rooms}
-        onSelectRoom={openRoom}
+        onSelectRoom={(room) => { openRoom(room); setSidebarOpen(false); }}
       />
 
 

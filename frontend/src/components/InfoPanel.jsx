@@ -84,6 +84,11 @@ function InfoPanel({
       <aside className={`panel-right ${isOpen ? "" : "panel-right--hidden"}`} aria-label="Details panel">
         <div className="panel-right__header">
           <span className="panel-right__title">Details</span>
+          {onClose && (
+            <button className="icon-btn panel-right__close" onClick={onClose} aria-label="Close panel">
+              ✕
+            </button>
+          )}
         </div>
         <div className="panel-right__body">
           <p className="panel-right__empty">Select a conversation to view details.</p>

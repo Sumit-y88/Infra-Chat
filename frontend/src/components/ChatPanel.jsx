@@ -77,6 +77,27 @@ function ChatPanel({
   if (!selectedChat) {
     return (
       <main className="center-col empty-center-col" role="main">
+        {/* Mobile Header for empty state */}
+        <div className="center-col__header empty-center-col__header">
+          <div className="center-col__header-left">
+            {onToggleSidebar && (
+              <button
+                className="icon-btn mobile-rail-toggle"
+                onClick={onToggleSidebar}
+                aria-label="Open navigation channels"
+                title="Channels & messages"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            )}
+            <span className="center-col__title">Internal Network</span>
+          </div>
+        </div>
+
         <div className="empty-state">
           <div className="empty-state__glyph" aria-hidden="true">
             <span style={{ height: "6px" }} />
@@ -87,6 +108,15 @@ function ChatPanel({
           <p className="empty-state__sub">
             Choose a room channel or direct message to begin communicating.
           </p>
+
+          {onToggleSidebar && (
+            <button
+              className="btn-accent empty-state__open-sidebar-btn"
+              onClick={onToggleSidebar}
+            >
+              Browse channels & chats
+            </button>
+          )}
 
           {availableRooms && availableRooms.length > 0 && onSelectRoom && (
             <div className="empty-state__rooms">
